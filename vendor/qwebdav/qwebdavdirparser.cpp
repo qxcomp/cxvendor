@@ -207,16 +207,19 @@ void QWebdavDirParser::replyFinished()
     #ifdef DEBUG_WEBDAV
         qDebug() << "   Reply finished. Content header:" << contentType;
     #endif
+        m_lastReplyBytes = 0;   // 默认无下载量；仅成功分支在 parseMultiResponse 前赋值
         if ( (m_reply->error() != QNetworkReply::NoError) && (m_reply->error() != QNetworkReply::OperationCanceledError) ) {
             QString errStr = m_reply->errorString();
             errStr = errStr.right(errStr.size()-errStr.indexOf("server replied:")+1);
-            emit errorChanged(errStr);
+            emit errorChanged(errStr + QStringLiteral(" - ")
+                              + m_reply->url().toString());
     #ifdef DEBUG_WEBDAV
             qDebug() << "   Reply has error. Error:" << m_reply->errorString() << "Code:" << m_reply->error();
     #endif
         }
         else {
             QByteArray data = m_reply->readAll();
+            m_lastReplyBytes = (qint64)data.size();
             //        if(data.isEmpty()) {
             //            qDebug() << "QWebdavDirParser::replyFinished() | Reply has no data."; //<< m_reply->rawHeaderPairs();
             //        }
