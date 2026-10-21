@@ -111,28 +111,11 @@
   - `lib/arm64-v8a/libcurl.so` (SHA256: `5ceb34ff92d9f6cd6b28901cc220bc2917a53e2614e8c9f6764af18c89063b88`)
   - `lib/arm64-v8a/libssl.so` (SHA256: `96d844acd9b264face6529b3502269577c1c14843cef4b55031deb114db8f0a7`)
   - `lib/arm64-v8a/libcrypto.so` (SHA256: `953e2c534771b09e022bf4ef3d7d3ff4c18ba10241fb430036d1147399a28a90`)
-- Qt 6 Android TLS 后端（QtNetwork dlopen 优先探测带 `_3` 后缀的 OpenSSL 3 库）：
-  - 来源：与上列裸名 `libssl.so`/`libcrypto.so` **同构建同源** —— 同为 XDcobra v8.19.0-1
-    （`libcurl-openssl` 变体）OpenSSL 3.6.1 产物。**不入库**，由 CI 于构建时经
-    `scripts/ci_prebuild_anystik_vendor.sh` 就地自产（`cp` + `patchelf`）。
-  - 自产配方：`libcrypto_3.so` = 裸名 `libcrypto.so` 改 SONAME；`libssl_3.so` =
-    裸名 `libssl.so` 改 SONAME **并** `--replace-needed libcrypto.so libcrypto_3.so`
-    （二者 NEEDED 不同，仅改 SONAME 会误加载裸名 libcrypto）。
-  - 证据（2026-10-13 核验，针对维护者本地副本）：`.text` 段与裸名库逐字节一致
-    （`cmp` 按段归因 0 命中）、`built on: Wed Mar 25 04:56:33 2026 UTC`（秒级与裸名库相同）、
-    NDK r29、phdr 3→4 + `.dynstr` 移位至文件尾（patchelf 追加段特征）
-  - 维护者本地副本 SHA256（历史记录；CI 产物因 patchelf 版本不同字节可能不同，
-    改以 `readelf -d` 校验 SONAME/NEEDED）：
-    `libssl_3.so`=`9e70b6a95b4c496acb12ae2f3b134e85718e5f144a265777239384c4ccbc68fd`、
-    `libcrypto_3.so`=`01140076452f505408cad0a33b052dfa1c0dd4c6e86f1919275076501ab5cb70`
-  - 与 libcurl NEEDED 的裸名 libssl.so/libcrypto.so 二者并存不冲突（见 build-android.sh）
 - Headers:
   - `include/curl/` (curl 头文件)
   - 注：v8.19.0-1 包内不含 OpenSSL 头，本地 `include/openssl/` 为另行放置；
-    anystik 无直接 `#include <openssl/>`，CI 缺此头不影响编译链接
-  - anystik 亦无 `#include <sqlite3.h>`，sqlite3.h 不随仓库提供也不在 CI 下载之列
-- 此目录全部不入库：CI 于构建时经 `scripts/ci_prebuild_anystik_vendor.sh`
-  自动下载/自产并校验（裸名库校验 SHA256，`_3` 库校验 SONAME/NEEDED）
+    qsktox 无直接 `#include <openssl/>`，CI 缺此头不影响编译链接
+- 此目录不入库：CI 于构建时经 `scripts/ci_prebuild_qsktox_vendor.sh` 自动下载归位并校验 SHA256
 
 ## UnifiedPush android-connector
 
@@ -502,3 +485,46 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
 - **已验证**: `-std=gnu99/-std=gnu17 -Wall -Wextra -fsyntax-only` 零警告；独立驱动
   `/tmp/opencode/sha1ossh_probe.c`：FIPS 三向量（abc / "abcdb…" 56B / 1000000×"a"）全过、
   1000B 多块输入 hash 后逐字节回读不回写断言通过（2026-10-07）
+
+## gumbo（HTML5 解析器，链接预览用）
+
+- **Name**: gumbo-parser/gumbo-parser（Google gumbo-parser 的现代维护分支）
+- **Version**: **0.14.1**（2026-09-27 hotfix；`CHANGES.md` 确认，兼容 WPT tree construction 测试）
+- **Upstream**: https://codeberg.org/gumbo-parser/gumbo-parser
+  （官方源在 Codeberg；GitHub mirror `gumbo-parser/gumbo-parser`）
+- **License**: Apache-2.0（`gumbo/COPYING`）
+- **来源**: 经 `gh-proxy.org` 前缀从 GitHub mirror 逐文件下载（GitHub 直连被阻断）
+- **Files**（SHA256）:
+  - 编译单元（12，清单取自上游 `meson.build` 的 `gumbo_src`）:
+    - `gumbo/attribute.c` `8ef119b956d2f1cc89eddff49f3445aff3e066615c66bb1bf686a2106b215bd6`
+    - `gumbo/char_ref.c` `dc336f658f2b879039e788e3f025cd1612300d5d75e8a15cfb76a620eeefcf96`
+    - `gumbo/char_ref_gperf.c` `5ae87a5b94094a31442664fc7527106a545a4a014d8822b5b3de114abc8cf647`
+    - `gumbo/error.c` `e4d777af9372483d9053e8722558acd9edec7c840087e7cd6d8ba8652e866a22`
+    - `gumbo/parser.c` `ddf3050c3957ad40911c9f6d1f32369a3e4bf7766aafd1aff908696adcfd18b6`
+    - `gumbo/string_buffer.c` `aa221dafc32d91aa8b367c819965a816c61e8884a6148f03372b445d2ed99b1b`
+    - `gumbo/string_piece.c` `08a92fb76160f82e5b6a0a2229892057903ec4b76dbce08c8723b6479de1b0e9`
+    - `gumbo/tag.c` `f3f432f6f1b29d16262fff6e65f5aef2f7933b6918b170a27d5bfe7121ae374d`
+    - `gumbo/tokenizer.c` `fbac96299cadc1009f96528168829635a945566699870be0273a06f4d6698243`
+    - `gumbo/utf8.c` `721d317237d4cf1be279b8037d7e6941fb90980c61a20771758ed6942e5af914`
+    - `gumbo/util.c` `a475451b46362b9059a7a1c7322f110b165a34c17dd7603119151bc936b5a371`
+    - `gumbo/vector.c` `5a41a60acc66e107cdd309749af556de06c0d22fb5a750e084f0e4c8cbd31177`
+  - 公开头: `gumbo/gumbo.h` `50632920ec1a6efba811ecd88a19dedad1edf7056f665727100e68c8b93ad0b1`
+    `gumbo/tag_enum.h` `b3477365ac929de00135fb244e02446a6b1e67dfc07537aa39242494b32be18b`
+  - 内部头: `attribute.h` `char_ref.h` `error.h` `insertion_mode.h` `parser.h`
+    `string_buffer.h` `string_piece.h` `tag_gperf.h` `tag_sizes.h` `tag_strings.h`
+    `tokenizer.h` `tokenizer_states.h` `token_type.h` `utf8.h` `util.h` `vector.h`
+  - `gumbo/COPYING`（取自上游 `doc/COPYING`）
+    `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`
+  - `gumbo/README.md` `35c435cd20b29c09ba03bf1b14a15e68b52842c9d4d3b44121795fd677945506`
+  - 注：v0.14.1 已无 `replacement.h`/`macros.h`/`ascii.c`/`nokogiri_gumbo.h`（旧版遗留，无源码引用）
+- **特性**: 纯 C99，**零外部依赖**（无 iconv/libxml2/expat）；不建 DOM 的流式 parse tree；
+  全平台（Linux/macOS/Android）均可直接编译（已 `gcc -std=c99 -fsyntax-only` 12 单元全过），
+  不依赖系统 libgumbo
+- **为何用此版本**: Google 原 `google/gumbo-parser` 2016 起停维护；本分支为社区续维护，
+  含 `<selectedcontent>`/处理指令等新规范支持与多处 UAF 修复
+- **用途**: `qlappcom/linkpreview.cpp` 的 HTML5 链接预览解析（`og:`/`twitter:` meta、`<title>`）
+- **集成方式**: **源码内嵌编译**（非预编译 .so、**不使用系统 libgumbo**）。
+  qsktox 经 `qsktox/CMakeLists.txt` 的 `add_library(gumbo STATIC ...)`；qltox 经
+  `include(../vendor/gumbo.pri)` 编入。三平台行为一致
+- **限制**: 仅支持 UTF-8 输入（调用方已先用 `linkPreviewDecodeToUtf8` 转码）；
+  不支持 DOM 可变操作（本项目只读遍历）
