@@ -548,20 +548,34 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
 
 ## base58
 
-- **Name**: miguelmota/cpp-base58
-- **Version**: master @ `72635ec1758095d7b3020d3be038c006167d63c6`
-- **Upstream**: https://github.com/miguelmota/cpp-base58
-- **License**: MIT（文件头：base-x contributors 2018 + Bitcoin Core developers 2014-2018）
+- **Name**: luke-jr/libbase58（**当前采用**）
+- **Version**: master @ 2023-05-06（`pushed_at: 2023-05-06T05:07:57Z`）
+- **Upstream**: https://github.com/luke-jr/libbase58
+- **License**: MIT（见上游 `COPYING`）
 - **Files**:
-  - `base58.cpp` (SHA256: `12686cd3dcda3ff0fa00cc4e14aea6c0478087af013276087e08c183e4734747`)
-    来源：`https://raw.githubusercontent.com/miguelmota/cpp-base58/72635ec1758095d7b3020d3be038c006167d63c6/base58.cpp`
-- **类型**: 单文件纯算法实现（源自 Bitcoin Core `base58.cpp` / base-x，58 进制大数编解码）
-- **API**: `int base58encode(const std::string input, int len, unsigned char result[])` /
-  `int base58decode(const std::string input, int len, unsigned char *result/resultlen接口见源码)`
-  —— 上游**无头文件**，接入时自行在调用方声明 `extern`
-- **验证**: `g++ -c -std=c++14 -O0` 单元编译通过；调用方声明 `extern` 后链接通过
+  - `base58.c` (SHA256: `32df54c79fbc0d49ad998efef5bbf55fa0d236c615af097d4554fb4b50e3ec54`)
+    来源：`https://raw.githubusercontent.com/luke-jr/libbase58/master/base58.c`
+  - `libbase58.h` (SHA256: `2ec80c5190660207fef0ecdb72ebf9911a849c60732f6ccd3c342acc8971b6b6`)
+    来源：`https://raw.githubusercontent.com/luke-jr/libbase58/master/libbase58.h`
+  - 按上游原文件名存放（base58.c + libbase58.h 本就不同名），不建子目录
+- **API**（C，`extern "C"` 兼容）:
+  - `bool b58enc(char *b58, size_t *b58sz, const void *bin, size_t binsz)` —— 纯 Base58 编码
+  - `bool b58tobin(void *bin, size_t *binsz, const char *b58, size_t b58sz)` —— 纯 Base58 解码（`*binsz` 传入缓冲大小，返回时为实际长度）
+  - `int b58check(...)` / `bool b58check_enc(...)` —— Base58Check（仅此二者需要 SHA256）
+  - `bool (*b58_sha256_impl)(void*, const void*, size_t)` —— 调用方必须提供 SHA256 实现（仅用 Encode/Decode 可不设）
+- **验证**: `gcc -std=c99` 编译 + 回环测试通过：`"Hello World!"` → `2NEpo7TZRRrLZSi2U`（确定性，
+  与已知正确值一致），5 次重复结果全同
 - **用途**: 预留（如节点 ID/密钥类字符串编码），不接入当前构建
 - **注意**:
-  - 纯 Base58（无 Base58Check/校验和），无前导 `'1'` 保留逻辑以外的 Check 机制
-  - 上游为单 `.cpp` 无 `.h`，故按“1～2 文件不建子目录”惯例直接放 `vendor/` 根
-  - `base58encode` 传参 `input` 为值传递（上游原貌，未优化）
+  - 上游 `libbase58.h` 用到 `uint8_t` 但**未包含 `<stdint.h>`**（上游原貌缺陷）——调用方需在
+    `#include "libbase58.h"` **之前**自行 `#include <stdint.h>`
+  - 纯 Encode/Decode 不依赖任何外部库；Base58Check 需自备 `b58_sha256_impl`（未提供时不得调用 b58check）
+  - `b58tobin` 的 `*binsz` 语义：输入为目标缓冲大小，输出为实际字节长（结果在缓冲“右对齐”，偏移 = 缓冲大小 - 实际长）
+
+### 曾评估弃用：miguelmota/cpp-base58（记录备查）
+
+- Upstream: https://github.com/miguelmota/cpp-base58 @ `72635ec1`（MIT）
+- **弃用原因（实测缺陷）**: `base58encode` 内部 `unsigned char digits[len * 137 / 100]` 为
+  **未初始化 VLA**，`digits[0]` 从未清零，导致**同输入多次运行输出不同**（实测 5 次运行 5 种结果，
+  非确定性、不可复现）；`base58decode` 还存在额外前导 `0x00` 字节未裁剪问题
+- 结论：不可作为可靠实现使用，已从 vendor 移除，留此记录避免将来误引
