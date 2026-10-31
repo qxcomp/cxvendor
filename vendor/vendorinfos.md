@@ -528,3 +528,40 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
   `include(../vendor/gumbo.pri)` 编入。三平台行为一致
 - **限制**: 仅支持 UTF-8 输入（调用方已先用 `linkPreviewDecodeToUtf8` 转码）；
   不支持 DOM 可变操作（本项目只读遍历）
+
+## cpp-httplib
+
+- **Name**: yhirose/cpp-httplib
+- **Version**: 0.64.0（Release tag `v0.64.0`，文件内 `CPPHTTPLIB_VERSION "0.64.0"` 与之核对一致）
+- **Upstream**: https://github.com/yhirose/cpp-httplib
+- **License**: MIT（见 `httplib.h` 文件头版权声明）
+- **Files**:
+  - `httplib.h` (SHA256: `805169049e6a6e9ba7729d7e01d14ced825029c88a277586602a6b38df4d5357`)
+    来源：`https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.64.0/httplib.h`（经 gh-proxy.com 下载）
+- **类型**: header-only 单文件（HTTP/HTTPS 客户端 + 服务端，C++11+）
+- **验证**: `g++ -fsyntax-only -std=c++14 -I vendor` 包含单元通过
+- **用途**: 预留（轻量 HTTP 客户端/服务端候选，不接入当前构建）
+- **注意**:
+  - HTTPS 需 OpenSSL/BoringSSL/wolfSSL，启用压缩需 zlib
+  - 按需 `#include`（单文件约 860KB，编译期较重）
+  - 与 Qt 线程/事件循环配合需留意（自带线程池）
+
+## base58
+
+- **Name**: miguelmota/cpp-base58
+- **Version**: master @ `72635ec1758095d7b3020d3be038c006167d63c6`
+- **Upstream**: https://github.com/miguelmota/cpp-base58
+- **License**: MIT（文件头：base-x contributors 2018 + Bitcoin Core developers 2014-2018）
+- **Files**:
+  - `base58.cpp` (SHA256: `12686cd3dcda3ff0fa00cc4e14aea6c0478087af013276087e08c183e4734747`)
+    来源：`https://raw.githubusercontent.com/miguelmota/cpp-base58/72635ec1758095d7b3020d3be038c006167d63c6/base58.cpp`
+- **类型**: 单文件纯算法实现（源自 Bitcoin Core `base58.cpp` / base-x，58 进制大数编解码）
+- **API**: `int base58encode(const std::string input, int len, unsigned char result[])` /
+  `int base58decode(const std::string input, int len, unsigned char *result/resultlen接口见源码)`
+  —— 上游**无头文件**，接入时自行在调用方声明 `extern`
+- **验证**: `g++ -c -std=c++14 -O0` 单元编译通过；调用方声明 `extern` 后链接通过
+- **用途**: 预留（如节点 ID/密钥类字符串编码），不接入当前构建
+- **注意**:
+  - 纯 Base58（无 Base58Check/校验和），无前导 `'1'` 保留逻辑以外的 Check 机制
+  - 上游为单 `.cpp` 无 `.h`，故按“1～2 文件不建子目录”惯例直接放 `vendor/` 根
+  - `base58encode` 传参 `input` 为值传递（上游原貌，未优化）
