@@ -2,14 +2,15 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO lief-project/LIEF
     REF ${VERSION}
-    SHA512 3638269782215c7d24dc76a8e4178f5792dfeb97ea02f8b1bb2d33a199a4595478c2642f82c083fbdff4cd768e4da8c0fef0806865081239047fe5446437f4f2
+    SHA512 35d86d23306be0d9713fe6feb4632d83945a3e81557d12c6bdc23164818981dea30483d9ed7fdd5f8ba91803ceec716244f43527221e407f4b8fae021743e6a3
     HEAD_REF master
     PATCHES
-        fix-cmakelists.patch
+    #    fix-cmakelists.patch
         fix-liefconfig-cmake-in.patch
         fix-vcpkg-includes.patch
-        disable-warnings-as-errors.patch
-        fix-utfcpp-4.patch
+     #   disable-warnings-as-errors.patch
+      #  fix-utfcpp-4.patch
+       # lief-utf8cpp-fix.patch
 )
 
 file(REMOVE_RECURSE "${SOURCE_PATH}/third-party")
@@ -28,6 +29,7 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
         "dex"            LIEF_DEX               # Build LIEF with DEX module
         "vdex"           LIEF_VDEX              # Build LIEF with VDEX module
         "art"            LIEF_ART               # Build LIEF with ART module
+		"runtime" LIEF_RUNTIME
 )
 
 vcpkg_cmake_configure(
@@ -35,7 +37,11 @@ vcpkg_cmake_configure(
     OPTIONS
         ${FEATURE_OPTIONS}
         -DLIEF_EXAMPLES=OFF
-
+		
+        -DLIEF_RUNTIME=ON
+       -DLIEF_RUNTIME_PLATFORM=linux   # 根据你的目标平台选择
+        -DLIEF_RUNTIME_ARCH=x86_64         # 根据你的目标架构选择
+        
         # Build with external vcpkg dependencies
         -DLIEF_OPT_MBEDTLS_EXTERNAL=ON
         -DLIEF_EXTERNAL_SPDLOG=ON
