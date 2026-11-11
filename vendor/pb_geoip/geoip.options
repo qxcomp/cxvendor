@@ -1,0 +1,6 @@
+# geoip.dat 条目数量巨大（entry 200+，每国 cidr 数万）：
+# 只有“列表”类字段用 FT_CALLBACK 流式解码，标量/小字段保持静态，方便在回调里直接取用
+geoip.GeoIPList.entry    type: FT_CALLBACK
+geoip.GeoIP.cidr         type: FT_CALLBACK
+geoip.GeoIP.country_code max_size: 8
+geoip.CIDR.ip            max_size: 16

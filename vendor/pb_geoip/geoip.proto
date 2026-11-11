@@ -1,0 +1,19 @@
+// Xray/V2Ray geoip.dat 的 protobuf schema（与 XTLS/Xray-core v26.11.9 一致）
+// 字段编号不可随意改动，否则无法解析官方 geoip.dat
+syntax = "proto3";
+
+package geoip;
+
+message CIDR {
+  bytes ip = 1;
+  uint32 prefix = 2;
+}
+
+message GeoIP {
+  string country_code = 1;
+  repeated CIDR cidr = 2;
+}
+
+message GeoIPList {
+  repeated GeoIP entry = 1;
+}

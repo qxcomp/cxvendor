@@ -602,3 +602,26 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
   **未初始化 VLA**，`digits[0]` 从未清零，导致**同输入多次运行输出不同**（实测 5 次运行 5 种结果，
   非确定性、不可复现）；`base58decode` 还存在额外前导 `0x00` 字节未裁剪问题
 - 结论：不可作为可靠实现使用，已从 vendor 移除，留此记录避免将来误引
+
+## pb_geoip（用 nanopb 解码 geoip.dat 的离线国家查询实现）
+
+- **Name**: nanopb
+- **Version**: **0.4.9.1**（`pb.h` 中 `NANOPB_VERSION`）
+- **Upstream**: https://github.com/nanopb/nanopb/releases/tag/0.4.9.1
+- **License**: zlib（`vendor/nanopb/LICENSE.txt`，另附 `AUTHORS.txt`）
+- **Files**（上游原样，勿改）:
+  - `pb_geoip/pb.h`、`pb_geoip/pb_common.c/.h`、`pb_geoip/pb_decode.c/.h`、`pb_geoip/pb_encode.c/.h`
+- **本项目新增文件**:
+  - `pb_geoip/geoip.proto`：与 **XTLS/Xray-core v26.11.9** 一致的 geodata schema
+    （`GeoIPList{ repeated GeoIP entry=1 }` / `GeoIP{ string country_code=1; repeated CIDR cidr=2 }` /
+    `CIDR{ bytes ip=1; uint32 prefix=2 }`），字段编号不可改
+  - `pb_geoip/geoip.options`：`GeoIPList.entry`、`GeoIP.cidr` 设为 `FT_CALLBACK`（条目数上万，不能写死 max_count）；
+    `GeoIP.country_code max_size: 8`、`CIDR.ip max_size: 16` 保持静态，便于回调内直接取值
+  - `pb_geoip/geoip.pb.c/.h`：由 **nanopb_generator 0.4.9.1** 生成（文件头带版本号）
+  - `pb_geoip/README.md`：版本/生成命令/更新步骤
+  - `pb_geoip.pri`：`include(../../vendor/pb_geoip.pri)` 引入（注意要放在 `.pro` 的 `SOURCES =` **之后**，否则被覆盖）
+- **依赖**: **无运行时依赖**（纯 C 实现，不是 Google protobuf 库）；仅重新生成 `geoip.pb.*` 时需开发机装
+  Python `protobuf` 包与同版本 `nanopb_generator.py`
+- **用途**: v2ray_suber 离线解析内核自带 `geoip.dat`，做 IP→国家 查询（不依赖系统 `geoiplookup`/`geoip-bin`）
+- **验证**: `8.8.8.8→US`、`114.114.114.114→CN`、`1.1.1.1→AU`、`202.50.253.45→NL`、
+  IPv6 `2606:4700::1111→CA`（实测于 v2ray_suber + Qt3 构建）
