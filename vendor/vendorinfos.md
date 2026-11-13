@@ -625,3 +625,42 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
 - **用途**: v2ray_suber 离线解析内核自带 `geoip.dat`，做 IP→国家 查询（不依赖系统 `geoiplookup`/`geoip-bin`）
 - **验证**: `8.8.8.8→US`、`114.114.114.114→CN`、`1.1.1.1→AU`、`202.50.253.45→NL`、
   IPv6 `2606:4700::1111→CA`（实测于 v2ray_suber + Qt3 构建）
+
+## android-ffmpeg/arm64-v8a（FFmpeg Android arm64 预编译库）
+
+- **Name**: husen-hn/ffmpeg-android-binary
+- **Upstream**: https://github.com/husen-hn/ffmpeg-android-binary
+- **Release tag**: **v2.0.0** —— ⚠️ tag 号是仓库自己的版本号，**tag v2.0.0 内含的是 FFmpeg 7.1**
+  （`include/libavformat/version.h` → `LIBAVFORMAT_VERSION_INT = 61.7.100`；so 由 NDK r26b 构建、
+  `min API 21`、`aarch64` 已用 `file` 核实、SONAME 无版本后缀如 `libavformat.so`，Android 友好）
+- **License**: FFmpeg 本体 LGPL-2.1+（该构建未显式 enable-gpl；动态链接分发需遵守 LGPL 条款，
+  注意保留版权声明并提供可重链途径）
+- **Files**（入库布局，qskvotube CMake/androiddeployqt 消费）:
+  - `lib/libavformat.so libavcodec.so libavutil.so libswscale.so libswresample.so`
+    （另含 libavdevice/libavfilter/libpostproc，cxvideo 未链接但随包保留）
+  - `include/libav{format,codec,util}/ include/libsw{scale,resample}/`（头文件与 so 同版本）
+- **头文件来源**: ffmpeg.org `ffmpeg-7.1.tar.bz2` 解包 `libav*/libsw*/*.h`（so 包内不含头文件）
+- **sha256**（`lib/`）:
+  - libavcodec.so   `7a4e6126ccd997ded8cac850a6d0e2520fd313255bb05d46d4aaae5fe7cd9f4e`
+  - libavdevice.so  `7d578d0e2240319710b0da1fcaa6721652ebfc6f3e899d17eeb5eba9646cfb33`
+  - libavfilter.so  `cc544eaabc812856ac5673508c64cdc402604fe70bb35f2f992fe78c293f8be2`
+  - libavformat.so  `5693bcb612f2f388a6d8f55f2cfed9ec6f7435fc329e1497d166d5aef5ac4a6d`
+  - libavutil.so    `0bd26463e37655d8d4f6204cca67681cd5cc33135c5fec4c576bca2ef03eca41`
+  - libpostproc.so  `084b13ba10d4b9c91d376a0daf9abc8c28492651885ff2ad94c34e7e0f383f15`
+  - libswresample.so `30044f9fabcf896b2609f1cf7ca94ce1a7b58a7f97bc684d3d34199d94d3ee16`
+  - libswscale.so   `f3be8f84659070b41c32c85fa884156febf505fd99ab28c32ae0061a8559aeba`
+- **重取方法**（慢/失败时加 `https://gh-proxy.com/` 前缀）:
+  1. `curl -L https://gh-proxy.com/https://github.com/husen-hn/ffmpeg-android-binary/releases/download/v2.0.0/arm64-v8a.zip`
+  2. 解包 zip 内 `arm64-v8a/lib/*.so` → `vendor/android-ffmpeg/arm64-v8a/lib/`
+  3. `curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2` 解包，拷 `libav*/libsw*/*.h`
+     → `vendor/android-ffmpeg/arm64-v8a/include/<库名>/`
+- **选型记录**（2026-11 调研）:
+  - arthenica/ffmpeg-kit 已退役（2025），GitHub release 二进制已全部删除（API 实测 assets=0）
+  - hzw1199/Android-FFmpeg-Prebuilt：单文件 `libffmpeg.so`（全部合链），cxvideo 需要分库链接不匹配
+  - husen-hn/ffmpeg-android-binary：分库 .so + ffmpeg/ffprobe 可执行 + 全 codec/MediaCodec/NEON，
+    与 cxvideo 的 `PkgConfig::CXV_FFMPEG` 分库链接需求吻合 → 入选
+- **消费方**: `qskvotube/build-android.sh`（fail-fast 校验 lib 清单）+
+  `qskvotube/CMakeLists.txt` ANDROID 分支（`$ENV{CXV_FFMPEG_ARM64_DIR}` 或本目录，IMPORTED 链接）
+- **桌面无关**: 桌面构建走 pkg-config 系统库，不消费本目录
+- **验证**: 头文件 `avformat_network_init()` g++ -fsyntax-only 通过；桌面 FFmpeg 为 n9.0.2（API 63），
+  Android so 为 7.1（API 61/59），cxvideo 源码按 4.x+ 兼容 API 编写，交叉编译期如遇 API 差异按报错适配
