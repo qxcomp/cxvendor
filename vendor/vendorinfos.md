@@ -664,3 +664,23 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
 - **桌面无关**: 桌面构建走 pkg-config 系统库，不消费本目录
 - **验证**: 头文件 `avformat_network_init()` g++ -fsyntax-only 通过；桌面 FFmpeg 为 n9.0.2（API 63），
   Android so 为 7.1（API 61/59），cxvideo 源码按 4.x+ 兼容 API 编写，交叉编译期如遇 API 差异按报错适配
+
+## android-libmpv/libmpv.so（libmpv Android arm64 预编译库）
+
+- **Name**: media-kit/libmpv-android-video-build
+- **Upstream**: https://github.com/media-kit/libmpv-android-video-build
+- **Release tag**: **v1.1.11**（asset `default-arm64-v8a.jar`,2026-01-27 发布;
+  jar 内 `lib/arm64-v8a/libmpv.so` 解出）
+- **License**: LGPL-2.1+（mpv 本体;构建未含 GPL 组件的 default 变体）
+- **核实**（2026-11-13 `file`/`objdump`）: aarch64、min API 21、NDK r25c 构建、
+  stripped;**NEDED 仅系统库**(libm/libandroid/libOpenSLES/libEGL/libdl/libc)——
+  ffmpeg 静态内嵌于 libmpv.so,无第三方 so 依赖,eng_mpv dlopen 即用
+- **sha256**: `4a77ebff52bec1bd06feefd588ea4c26f2ef604ad70c780fdc2279d6c9802e31`
+- **重取方法**（慢/失败时加 `https://gh-proxy.com/` 前缀）:
+  `curl -L https://gh-proxy.com/https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/default-arm64-v8a.jar`
+  → `unzip lib/arm64-v8a/libmpv.so` → `vendor/android-libmpv/`
+- **消费方**: `qskvotube/build-android.sh`（`CXV_MPV_ARM64_SO` 缺省即本文件,
+  自动拷进 APK `libs/arm64-v8a/`;eng_mpv 运行期 dlopen "libmpv.so"）
+- **选型记录**: mpv-android 官方发布形态是 APK 非 so;media-kit 是 Flutter
+  media_kit 生态的维护仓库,jar 直接含 libmpv.so,自包含 → 入选
+- **桌面无关**: 桌面 mpv 引擎走系统 dlopen 的宿主 libmpv,不消费本目录
