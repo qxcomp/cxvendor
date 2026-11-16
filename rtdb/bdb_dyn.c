@@ -22,6 +22,10 @@
  *     不是独立导出符号，无需 dlsym。
  * ========================================================================== */
 
+#include <sys/types.h>
+/* _POSIX_C_SOURCE 下 sys/types.h 不定义 BSD 类型，而 db.h 需要它们 */
+typedef unsigned int u_int;
+typedef unsigned long u_long;
 #include <db.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,14 +83,14 @@ static int do_load(const char *library_path) {
     /* 1. 显式传入的路径 */
     if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("DB_DYN_LIB");
     if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 3. 系统搜索路径环境变量中的目录（拼接各版本库名） */
@@ -108,17 +112,17 @@ static int do_load(const char *library_path) {
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb62.dll", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb53.dll", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb48.dll", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb62.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb53.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb48.dll", p); { candidates[n] = bufs[n]; n++; }
 #elif defined(__APPLE__)
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.dylib", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.dylib", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.dylib", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.dylib", p); { candidates[n] = bufs[n]; n++; }
 #else
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.so", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.so", p); candidates[n++] = bufs[n];
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.so", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.so", p); { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -148,13 +152,13 @@ static int do_load(const char *library_path) {
     if (home && *home) {
         if (n < MAX_CANDIDATES - 3) {
 #ifdef __APPLE__
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.dylib", home); candidates[n++] = bufs[n];
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.dylib", home); candidates[n++] = bufs[n];
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.dylib", home); candidates[n++] = bufs[n];
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.dylib", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.dylib", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.dylib", home); { candidates[n] = bufs[n]; n++; }
 #else
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.so", home); candidates[n++] = bufs[n];
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.so", home); candidates[n++] = bufs[n];
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.so", home); candidates[n++] = bufs[n];
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.so", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.so", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.so", home); { candidates[n] = bufs[n]; n++; }
 #endif
         }
     }
@@ -287,22 +291,22 @@ char *db_strerror(int error) {
     return fn(error);
 }
 
-void db_version(int *majorp, int *minorp, int *patchp) {
-    static void (*fn)(int*, int*, int*) = NULL;
+char *db_version(int *majorp, int *minorp, int *patchp) {
+    static char *(*fn)(int*, int*, int*) = NULL;
     if (!fn) {
         if (!db_libok()) {
             if (majorp) *majorp = 0;
             if (minorp) *minorp = 0;
             if (patchp) *patchp = 0;
-            return;
+            return NULL;
         }
         *(void **)(&fn) = get_sym(db_handle, "db_version");
         if (!fn) {
             if (majorp) *majorp = 0;
             if (minorp) *minorp = 0;
             if (patchp) *patchp = 0;
-            return;
+            return NULL;
         }
     }
-    fn(majorp, minorp, patchp);
+    return fn(majorp, minorp, patchp);
 }

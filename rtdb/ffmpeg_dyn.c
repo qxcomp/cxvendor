@@ -52,6 +52,9 @@
   static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
   static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
   static const char *lib_error(void) { return dlerror(); }
+  #ifdef __GNUC__
+  __attribute__((unused)) static void *lib_error_ref = (void *)lib_error;
+  #endif
   #define PATH_SEP ':'
 #endif
 
@@ -78,7 +81,7 @@ static lib_handle_t load_one(const char *lib_base, int version) {
         const char *env = getenv("FFMPEG_DYN_LIB");
         if (env && *env && n < MAX_CANDIDATES - 1) {
             snprintf(bufs[n], PATH_BUF_LEN, "%s", env);
-            candidates[n++] = bufs[n];
+            { candidates[n] = bufs[n]; n++; }
         }
     }
 
@@ -103,10 +106,10 @@ static lib_handle_t load_one(const char *lib_base, int version) {
                     /* 尝试带版本号和不带版本号的名字 */
 #ifdef __APPLE__
                     snprintf(bufs[n], PATH_BUF_LEN, "%s/%s.%d.dylib", p, lib_base, version);
-                    candidates[n++] = bufs[n];
+                    { candidates[n] = bufs[n]; n++; }
 #else
                     snprintf(bufs[n], PATH_BUF_LEN, "%s/%s.so.%d", p, lib_base, version);
-                    candidates[n++] = bufs[n];
+                    { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -117,20 +120,20 @@ static lib_handle_t load_one(const char *lib_base, int version) {
 
     /* 3. 默认库名（带版本号，优先） */
 #ifdef __APPLE__
-    snprintf(bufs[n], PATH_BUF_LEN, "%s.%d.dylib", lib_base, version); candidates[n++] = bufs[n];
-    snprintf(bufs[n], PATH_BUF_LEN, "%s.dylib", lib_base); candidates[n++] = bufs[n];
+    snprintf(bufs[n], PATH_BUF_LEN, "%s.%d.dylib", lib_base, version); { candidates[n] = bufs[n]; n++; }
+    snprintf(bufs[n], PATH_BUF_LEN, "%s.dylib", lib_base); { candidates[n] = bufs[n]; n++; }
 #else
-    snprintf(bufs[n], PATH_BUF_LEN, "%s.so.%d", lib_base, version); candidates[n++] = bufs[n];
-    snprintf(bufs[n], PATH_BUF_LEN, "%s.so", lib_base); candidates[n++] = bufs[n];
+    snprintf(bufs[n], PATH_BUF_LEN, "%s.so.%d", lib_base, version); { candidates[n] = bufs[n]; n++; }
+    snprintf(bufs[n], PATH_BUF_LEN, "%s.so", lib_base); { candidates[n] = bufs[n]; n++; }
 #endif
 
     /* 4. 平台默认路径 */
 #ifdef __APPLE__
-    snprintf(bufs[n], PATH_BUF_LEN, "/opt/local/lib/%s.%d.dylib", lib_base, version); candidates[n++] = bufs[n];
-    snprintf(bufs[n], PATH_BUF_LEN, "/usr/local/lib/%s.%d.dylib", lib_base, version); candidates[n++] = bufs[n];
+    snprintf(bufs[n], PATH_BUF_LEN, "/opt/local/lib/%s.%d.dylib", lib_base, version); { candidates[n] = bufs[n]; n++; }
+    snprintf(bufs[n], PATH_BUF_LEN, "/usr/local/lib/%s.%d.dylib", lib_base, version); { candidates[n] = bufs[n]; n++; }
 #elif defined(__linux__)
-    snprintf(bufs[n], PATH_BUF_LEN, "/usr/lib/x86_64-linux-gnu/%s.so.%d", lib_base, version); candidates[n++] = bufs[n];
-    snprintf(bufs[n], PATH_BUF_LEN, "/usr/lib/%s.so.%d", lib_base, version); candidates[n++] = bufs[n];
+    snprintf(bufs[n], PATH_BUF_LEN, "/usr/lib/x86_64-linux-gnu/%s.so.%d", lib_base, version); { candidates[n] = bufs[n]; n++; }
+    snprintf(bufs[n], PATH_BUF_LEN, "/usr/lib/%s.so.%d", lib_base, version); { candidates[n] = bufs[n]; n++; }
 #endif
     candidates[n] = NULL;
 

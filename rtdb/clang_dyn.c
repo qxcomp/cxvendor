@@ -81,14 +81,14 @@ static int do_load(const char *library_path) {
     /* 1. 显式传入的路径 */
     if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("CLANG_DYN_LIB");
     if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 3. 系统搜索路径环境变量 */
@@ -110,11 +110,11 @@ static int do_load(const char *library_path) {
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dll", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dll", p); { candidates[n] = bufs[n]; n++; }
 #elif defined(__APPLE__)
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dylib", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dylib", p); { candidates[n] = bufs[n]; n++; }
 #else
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.so", p); candidates[n++] = bufs[n];
+                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.so", p); { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -137,9 +137,9 @@ static int do_load(const char *library_path) {
     const char *home = getenv("HOME");
     if (home && *home && n < MAX_CANDIDATES - 2) {
 #ifdef __APPLE__
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.dylib", home); candidates[n++] = bufs[n];
+        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.dylib", home); { candidates[n] = bufs[n]; n++; }
 #else
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.so", home); candidates[n++] = bufs[n];
+        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.so", home); { candidates[n] = bufs[n]; n++; }
 #endif
     }
     if (n < MAX_CANDIDATES - 2) {

@@ -126,14 +126,14 @@ static int do_load(const char *library_path) {
     /* 1. 显式传入的路径 */
     if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 SQLITE3_DYN_LIB（完整文件路径） */
     const char *explicit_lib = getenv("SQLITE3_DYN_LIB");
     if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 3. 系统库搜索路径环境变量中的目录 + 默认库名 */
@@ -155,7 +155,7 @@ static int do_load(const char *library_path) {
                 if (sep) *sep = '\0';
                 if (*p) {  /* 跳过空项，避免意外加载当前目录 */
                     snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
-                    candidates[n++] = bufs[n];
+                    { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
             }
@@ -171,12 +171,12 @@ static int do_load(const char *library_path) {
     if (home && *home && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
                  home, DEFAULT_LIB_NAME);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
     if (n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
                  DEFAULT_LIB_NAME);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 6. 平台默认安装路径回退 */

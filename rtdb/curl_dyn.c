@@ -26,6 +26,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 新版 curl 头文件把 curl_easy_setopt/getinfo 定义为类型检查宏，
+ * 会与本封装的同名函数定义冲突，取消宏定义使用真正的 API */
+#ifdef curl_easy_setopt
+#undef curl_easy_setopt
+#endif
+#ifdef curl_easy_getinfo
+#undef curl_easy_getinfo
+#endif
+
 /* ============================================================
  * 平台适配层
  * ============================================================ */
@@ -83,14 +92,14 @@ static int do_load(const char *library_path) {
     /* 1. 显式传入的路径 */
     if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("CURL_DYN_LIB");
     if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 3. 系统搜索路径环境变量中的目录 */
@@ -112,7 +121,7 @@ static int do_load(const char *library_path) {
                 if (sep) *sep = '\0';
                 if (*p) {
                     snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
-                    candidates[n++] = bufs[n];
+                    { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
             }
@@ -128,12 +137,12 @@ static int do_load(const char *library_path) {
     if (home && *home && n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
                  home, DEFAULT_LIB_NAME);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
     if (n < MAX_CANDIDATES - 1) {
         snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
                  DEFAULT_LIB_NAME);
-        candidates[n++] = bufs[n];
+        { candidates[n] = bufs[n]; n++; }
     }
 
     /* 6. 平台默认路径 */
