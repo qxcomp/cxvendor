@@ -684,3 +684,5 @@ unifiedPushTopicLength = 14     // 总长度必须 14 字符（含 "up"）
 - **选型记录**: mpv-android 官方发布形态是 APK 非 so;media-kit 是 Flutter
   media_kit 生态的维护仓库,jar 直接含 libmpv.so,自包含 → 入选
 - **桌面无关**: 桌面 mpv 引擎走系统 dlopen 的宿主 libmpv,不消费本目录
+| wjcryptlib | https://github.com/WaterJuice/WjCryptLib (Rc4 单文件) | UNLICENSE(公有领域) | xhs 签名器 b1 指纹 RC4;详见 wjcryptlib/README.md |
+| zlib-crc32 | https://github.com/madler/zlib v1.2.11 crc32 逐字节路径移植 | zlib license | 无 zlib 平台兜底(x9=crc32);有 zlib 直接调系统 crc32();详见 zlib-crc32/README.md |
