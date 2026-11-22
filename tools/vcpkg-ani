@@ -1,0 +1,8 @@
+
+# usage: vcpkg-ani install foo:arm64-android-release
+
+set -x
+
+# export CMAKE_TOOLCHAIN_FILE=/opt/
+
+ANDROID_NDK_HOME=/opt/android-ndk vcpkg "$@"

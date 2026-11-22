@@ -1,0 +1,2 @@
+set -x
+PATH=/opt/mingw/bin:$PATH /opt/vcpkg/vcpkg "$@"
