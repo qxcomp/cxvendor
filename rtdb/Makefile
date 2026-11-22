@@ -17,7 +17,9 @@ MYSQL_CFLAGS := $(shell pkg-config --cflags mariadb 2>/dev/null || \
 PGSQL_CFLAGS := $(shell pkg-config --cflags libpq 2>/dev/null)
 
 TESTS := rclone python ruby guile vte notify dbus curl sqlite3 bdb \
-         ffmpeg mpv clang mysql pgsql nghttp2 nghttp3 wasmtime wasmedge
+         ffmpeg mpv clang mysql pgsql nghttp2 nghttp3 wasmtime wasmedge \
+         libevent libuv libev \
+         libxml2 expat tinyxml2
 
 # 无环境依赖、可直接跑的集合（mysql/pgsql 无服务时自身 SKIP 退出 0）
 RUN_SAFE := $(filter-out vte,$(TESTS))
