@@ -412,16 +412,18 @@ static int opendal_do_load(const char *library_path) {
     candidates[n++] = "/usr/lib/libopendal_c.so";
 #endif
 
+	int res = -1;
     for (i = 0; i < n; i++) {
         opendal_handle = load_lib(candidates[i]);
-        if (opendal_handle) break;
+        // printf("try %d %s\n", i, candidates[i]);
+        if (opendal_handle) { res = i; break; }
     }
     if (!opendal_handle || !opendal_sym("opendal_operator_new")) {
         fprintf(stderr, "opendal_dyn: cannot load opendal (%s)\n", lib_error());
         if (opendal_handle) { free_lib(opendal_handle); opendal_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "opendal_dyn: loaded opendal\n");
+    fprintf(stderr, "opendal_dyn: loaded opendal %d %s\n", res, candidates[res]);
     return 0;
 }
 
