@@ -1,0 +1,11 @@
+interprocess provides CMake targets:
+
+    find_package(unofficial-interprocess CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::interprocess::interprocess)
+
+The C API is available as <interprocess.h>.
+The C++11 RAII wrapper is available as <interprocess.hpp>.
+
+On Windows, IPCPP_SHARED=1 is added automatically by the imported target.
+For static builds, the CMake imported target also carries the Rust standard
+library's native system link dependencies.

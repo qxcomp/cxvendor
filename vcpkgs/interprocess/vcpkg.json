@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "interprocess",
+  "version-string": "2.4.9",
+  "description": "Cross-platform interprocess communication library with a C ABI",
+  "homepage": "https://github.com/kotauskas/interprocess",
+  "license": "0BSD OR Apache-2.0",
+  "supports": "((linux & (x64 | arm64)) | (osx & (x64 | arm64)) | (android & arm64) | (windows & x64 & !uwp & !staticcrt))",
+  "dependencies": []
+}

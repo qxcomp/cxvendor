@@ -1,0 +1,13 @@
+[package]
+name = "interprocess_ffi"
+version = "2.4.9"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+
+[lib]
+name = "interprocess_ffi"
+crate-type = ["@INTERPROCESS_CRATE_TYPE@"]
+
+[dependencies]
+interprocess = { path = "@INTERPROCESS_SOURCE_PATH@" }
