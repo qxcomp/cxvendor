@@ -1,0 +1,15 @@
+oauth2 provides a CMake target:
+
+    find_package(oauth2 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE oauth2::oauth2)
+
+The umbrella header is <oauth2/oauth2.h>. Two pkg-config modules are installed:
+
+    liboauth2        - core OAuth 2.x / OpenID Connect library
+    liboauth2_apache - Apache HTTPd bindings
+
+The Apache binding is built against the system apxs/APR development environment
+and is consumed through pkg-config rather than an exported CMake target:
+
+    pkg_check_modules(LIBOAUTH2_APACHE REQUIRED IMPORTED_TARGET liboauth2_apache)
+    target_link_libraries(main PRIVATE PkgConfig::LIBOAUTH2_APACHE)

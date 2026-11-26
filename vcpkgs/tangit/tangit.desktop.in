@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=lazygitGo (TanGit)
+Comment=Native Git desktop app built with MyGo and Lazygit
+Exec=@_TANGIT_DESKTOP_EXEC@ %F
+Icon=@_TANGIT_DESKTOP_ICON@
+Terminal=false
+Categories=Development;Git;

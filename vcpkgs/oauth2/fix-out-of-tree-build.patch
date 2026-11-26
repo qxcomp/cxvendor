@@ -1,0 +1,13 @@
+diff --git a/Makefile.am b/Makefile.am
+index 0af08b9..e0f55a3 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -6,7 +6,7 @@
+ # generic
+ #
+ 
+-AM_CPPFLAGS = -Wall -Werror -Wno-error=deprecated-declarations -I${srcdir}/include -I${srcdir}/src @JANSSON_CFLAGS@ @OPENSSL_CFLAGS@
++AM_CPPFLAGS = -Wall -Werror -Wno-error=deprecated-declarations -I$(top_builddir)/include -I${srcdir}/include -I${srcdir}/src @JANSSON_CFLAGS@ @OPENSSL_CFLAGS@
+ AM_CPPFLAGS += $(CODE_COVERAGE_CPPFLAGS) $(CODE_COVERAGE_CFLAGS)
+ AM_LDFLAGS =
+ if CODE_COVERAGE_ENABLED

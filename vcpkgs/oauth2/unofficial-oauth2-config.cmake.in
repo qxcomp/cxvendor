@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+# PACKAGE_INIT 展开在 vcpkg 构建期无法知道最终 triplet 安装前缀，
+# 安装后按 <prefix>/share/oauth2 的实际位置重算。
+get_filename_component(PACKAGE_PREFIX_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(OpenSSL)
+find_dependency(CURL)
+find_dependency(jansson CONFIG)
+find_dependency(cjose CONFIG)
+find_dependency(pcre2 CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/unofficial-oauth2-targets.cmake")
+
+check_required_components(oauth2)

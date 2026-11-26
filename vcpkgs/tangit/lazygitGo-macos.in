@@ -1,0 +1,8 @@
+#!/bin/sh
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$_here/tangit-auto-update.sh" ]; then
+  . "$_here/tangit-auto-update.sh"
+  tangit_auto_update_init
+fi
+# macOS native UI uses Metal; no MYGO_GPU override is needed.
+exec "@_TANGIT_APP_BINARY@" "$@"

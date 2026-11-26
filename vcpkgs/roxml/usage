@@ -1,0 +1,14 @@
+roxml provides CMake targets:
+
+    find_package(unofficial-roxml CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::roxml::roxml)
+
+The C API is available as <roxml.h>; the library is named libroxml (-lroxml).
+The imported target links the shared or static library according to the
+VCPKG_LIBRARY_LINKAGE triplet setting. On Windows the DLL is in bin/.
+The roxml XPath shell utility is installed to bin/roxml.
+
+Pkg-config is also supported:
+
+    pkg_check_modules(LIBROXML REQUIRED IMPORTED_TARGET libroxml)
+    target_link_libraries(main PRIVATE PkgConfig::LIBROXML)

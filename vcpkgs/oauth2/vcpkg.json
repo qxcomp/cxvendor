@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "oauth2",
+  "version-semver": "2.4.0",
+  "description": "OAuth 2.x and OpenID Connect C library with Apache bindings",
+  "homepage": "https://github.com/OpenIDC/liboauth2",
+  "license": "Apache-2.0",
+  "supports": "linux",
+  "dependencies": [
+    "openssl",
+    "curl",
+    "jansson",
+    "cjose",
+    "pcre2"
+  ]
+}

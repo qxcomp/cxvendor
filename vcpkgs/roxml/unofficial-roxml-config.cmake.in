@@ -1,0 +1,60 @@
+get_filename_component(_ROXML_PREFIX "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+if(NOT TARGET unofficial::roxml::roxml)
+    add_library(unofficial::roxml::roxml @ROXML_LIBRARY_TYPE@ IMPORTED)
+
+    set_target_properties(
+        unofficial::roxml::roxml
+        PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${_ROXML_PREFIX}/include"
+    )
+
+    if(WIN32)
+        if(@ROXML_IS_DYNAMIC@)
+            if(MINGW)
+                set(_ROXML_IMPLIB "${_ROXML_PREFIX}/lib/libroxml.dll.a")
+            else()
+                set(_ROXML_IMPLIB "${_ROXML_PREFIX}/lib/roxml.lib")
+            endif()
+            set_target_properties(
+                unofficial::roxml::roxml
+                PROPERTIES
+                IMPORTED_IMPLIB "${_ROXML_IMPLIB}"
+                IMPORTED_LOCATION "${_ROXML_PREFIX}/bin/roxml.dll"
+            )
+        else()
+            if(MINGW)
+                set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/libroxml-static.a")
+            else()
+                set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/roxml-static.lib")
+            endif()
+            set_target_properties(
+                unofficial::roxml::roxml
+                PROPERTIES
+                IMPORTED_LOCATION "${_ROXML_LOCATION}"
+            )
+        endif()
+    elseif(APPLE)
+        if(@ROXML_IS_DYNAMIC@)
+            set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/libroxml.dylib")
+        else()
+            set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/libroxml.a")
+        endif()
+        set_target_properties(
+            unofficial::roxml::roxml
+            PROPERTIES
+            IMPORTED_LOCATION "${_ROXML_LOCATION}"
+        )
+    else()
+        if(@ROXML_IS_DYNAMIC@)
+            set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/libroxml.so")
+        else()
+            set(_ROXML_LOCATION "${_ROXML_PREFIX}/lib/libroxml.a")
+        endif()
+        set_target_properties(
+            unofficial::roxml::roxml
+            PROPERTIES
+            IMPORTED_LOCATION "${_ROXML_LOCATION}"
+        )
+    endif()
+endif()

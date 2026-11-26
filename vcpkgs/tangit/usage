@@ -1,0 +1,39 @@
+tangit provides the lazygitGo (formerly TanGit) native Git desktop app.
+
+Automatic update checks
+  All launchers seed MyGo's updater.json with automaticChecks=false by default,
+  so background checks and the "Update available" badge stay off. A saved
+  explicit choice is respected. TANGIT_AUTO_UPDATE=1 enables automatic checks,
+  and TANGIT_AUTO_UPDATE=0 forces them off. The title bar's manual "Check for
+  updates" button remains available on every platform.
+
+Linux
+  tools/tangit/lazygitGo
+  tools/tangit/tangit
+  Both launchers default to MYGO_GPU=0, which makes MyGo use its CPU
+  renderer instead of OpenGL/GPU. MYGO_GPU unset, empty or 0 means 0;
+  any other value is normalized to 1. For example:
+      MYGO_GPU=1 tangit
+  TANGIT_DETACHED defaults to 0, so the GUI stays in the foreground and inherits
+  the caller's stdout/stderr instead of being detached with its output sent to
+  /dev/null. Starting from a shell therefore waits until the window closes. Use
+  TANGIT_DETACHED=1 to restore upstream's detached/background launch. This maps
+  to the inverted private marker LAZYGITGO_DETACHED_LAUNCH=1 when foreground is
+  selected. The real binary is tools/tangit/lazygitgo.bin.
+  The tray icon is disabled by default: upstream only creates it when tray.png
+  is readable, so the port installs tray.png.disabled instead. Rename it to
+  tray.png to restore the tray icon and close-to-tray behavior.
+
+Windows
+  tools/tangit/lazygitGo.cmd
+  tools/tangit/tangit.cmd
+  These cmd launchers seed updater.json before starting the renamed real
+  executables lazygitgo.bin.exe and tangit.bin.exe.
+
+macOS
+  tools/tangit/lazygitGo.app
+  tools/tangit/lazygitGo
+  tools/tangit/tangit
+
+Linux runtime needs system GTK 3 and libayatana-appindicator3-1. MyGo loads
+them at runtime with dlopen, so they are not vcpkg port dependencies.

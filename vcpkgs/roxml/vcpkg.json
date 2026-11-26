@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "roxml",
+  "version-semver": "3.0.2",
+  "description": "libroxml - a small C XML parser with XPath support and the roxml CLI",
+  "homepage": "https://www.libroxml.net/",
+  "license": "LGPL-2.1-only",
+  "supports": "((linux | android | freebsd) & (x64 | arm64)) | (osx & (x64 | arm64)) | (windows & (x64 | arm64) & !uwp)",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

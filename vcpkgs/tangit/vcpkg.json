@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "tangit",
+  "version-semver": "1.26.1",
+  "description": "Native Git desktop app built with MyGo and Lazygit (formerly TanGit, now lazygitGo)",
+  "homepage": "https://github.com/FleetingEcho/lazygitGo",
+  "license": "MIT",
+  "supports": "(linux | windows | osx) & (x64 | arm64)"
+}

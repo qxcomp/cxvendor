@@ -1,0 +1,8 @@
+if(NOT TARGET oauth2::oauth2)
+    add_library(oauth2::oauth2 UNKNOWN IMPORTED)
+    set_target_properties(oauth2::oauth2 PROPERTIES
+        IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/lib/@_OAUTH2_LIBRARY_FILE@"
+        INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/include"
+        INTERFACE_LINK_LIBRARIES "@_OAUTH2_INTERFACE_LINK_LIBRARIES@"
+    )
+endif()

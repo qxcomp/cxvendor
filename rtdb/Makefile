@@ -4,6 +4,8 @@
 # 唯一例外 test_vte 需要链接 gtk+-3.0（窗口测试），但也不链 -lvte。
 CC      ?= gcc
 CFLAGS  ?= -std=c99 -Wall -Wextra -D_POSIX_C_SOURCE=200809L -Itests
+CXX     ?= g++
+CXXFLAGS ?= -std=c++17 -Wall -Wextra
 LDLIBS  ?= -ldl
 BUILD   := tests/build
 
@@ -23,7 +25,8 @@ TESTS := rclone python ruby guile vte notify dbus curl sqlite3 bdb \
          gdbm lmdb leveldb \
          mxml opendal \
          md4c cmark \
-         protobuf-c thrift_c_glib libcbor tinycbor msgpack avro fastipc lcm tachyon nng mosquitto zmq libgccjit luajit mir lightning reproc fswatch
+         protobuf-c thrift_c_glib libcbor tinycbor msgpack avro fastipc lcm tachyon nng mosquitto zmq libgccjit luajit mir lightning reproc fswatch \
+         mbedtls wolfssl gnutls pcre2 tre re2
 
 # 无环境依赖、可直接跑的集合（mysql/pgsql 无服务时自身 SKIP 退出 0）
 RUN_SAFE := $(filter-out vte,$(TESTS))
@@ -50,6 +53,12 @@ $(foreach t,$(TESTS),$(eval $(call RUN_rule,$(t))))
 $(BUILD)/test_%: tests/test_%.c %_dyn.c tests/test_common.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $< $(word 2,$^) $(LDLIBS)
+
+# re2 例外：wrapper 是 C 文件，测试是 C++ 文件；仍然只显式链 -ldl
+$(BUILD)/test_re2: tests/test_re2.cpp re2_dyn.c tests/test_common.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -c re2_dyn.c -o $(BUILD)/re2_dyn.o
+	$(CXX) $(CXXFLAGS) -Itests -o $@ $< $(BUILD)/re2_dyn.o $(LDLIBS)
 
 # vte 例外：GTK3 头文件与链接库，但仍然不链 -lvte
 $(BUILD)/test_vte: tests/test_vte.c vte_dyn.c tests/test_common.h

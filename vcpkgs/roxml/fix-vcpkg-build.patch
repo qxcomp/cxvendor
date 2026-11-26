@@ -1,0 +1,62 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,9 +1,9 @@
+-cmake_minimum_required (VERSION 2.6)
++cmake_minimum_required (VERSION 3.5)
+ 
+ project (roxml C)
+ 
+-set (VERSION "2")
+-set (SOVERSION "3.0.2")
++set (VERSION "3.0.2")
++set (SOVERSION "3")
+ 
+ option(CONFIG_XML_FILE   "Can the target library parse file documents. When set to OFF, this result in smaller binary." ON)
+ option(CONFIG_XML_EDIT   "Can the target library modify XML tree. When set to OFF, this result in smaller binary (this saves about 3kb)" ON)
+@@ -102,6 +102,18 @@
+ 		OUTPUT_NAME roxml
+ 	)
+ 
+-install (TARGETS roxml-dynamic roxml-static DESTINATION lib)
+-install (TARGETS roxml-tool DESTINATION bin)
++if (WIN32)
++    # MSVC names the shared import library and the static archive both
++    # roxml.lib; keep them distinct so they cannot overwrite each other.
++    set_target_properties (roxml-static PROPERTIES OUTPUT_NAME roxml-static)
++endif ()
++
++# Explicit artifact destinations: on Windows the DLL must go to bin, not lib.
++install (TARGETS roxml-dynamic
++    RUNTIME DESTINATION bin
++    LIBRARY DESTINATION lib
++    ARCHIVE DESTINATION lib
++)
++install (TARGETS roxml-static ARCHIVE DESTINATION lib)
++install (TARGETS roxml-tool RUNTIME DESTINATION bin)
+ install (FILES "src/roxml.h" DESTINATION include)
+--- a/src/roxml_mem.h
++++ b/src/roxml_mem.h
+@@ -14,7 +14,7 @@
+ 
+ #include "roxml_internal.h"
+ 
+-memory_cell_t head_cell;
++extern memory_cell_t head_cell;
+ 
+ /** \brief alloc memory function
+  *
+--- a/src/roxml_core.h
++++ b/src/roxml_core.h
+@@ -15,9 +15,9 @@
+ #include "roxml_internal.h"
+ 
+ #ifdef __DEBUG
+-unsigned int _nb_node;
+-unsigned int _nb_attr;
+-unsigned int _nb_text;
++extern unsigned int _nb_node;
++extern unsigned int _nb_attr;
++extern unsigned int _nb_text;
+ #endif
+ 
+ /** \brief internal function

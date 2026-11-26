@@ -1,0 +1,11 @@
+cjose provides CMake targets:
+
+    find_package(cjose CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE cjose::cjose)
+
+Static-only builds also expose the explicit static target:
+
+    find_package(cjose CONFIG REQUIRED COMPONENTS static)
+    target_link_libraries(main PRIVATE cjose::cjose_static)
+
+The umbrella header is <cjose/cjose.h>. The pkg-config module is cjose.

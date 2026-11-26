@@ -1,0 +1,24 @@
+#!/bin/sh
+# Default to MyGo's CPU renderer on Linux: no OpenGL/GPU context is created.
+# MYGO_GPU unset, empty or 0 means 0; any other value is normalized to 1.
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$_here/tangit-auto-update.sh" ]; then
+  . "$_here/tangit-auto-update.sh"
+  tangit_auto_update_init
+fi
+case "${MYGO_GPU-}" in
+  ""|0) MYGO_GPU=0 ;;
+  *)    MYGO_GPU=1 ;;
+esac
+export MYGO_GPU
+# TANGIT_DETACHED=0 (default) keeps the GUI in the foreground so stdout/stderr
+# are not redirected to /dev/null. Upstream's private marker is inverted:
+# LAZYGITGO_DETACHED_LAUNCH=1 means "do not detach".
+case "${TANGIT_DETACHED-}" in
+  1) unset LAZYGITGO_DETACHED_LAUNCH ;;
+  *)
+    LAZYGITGO_DETACHED_LAUNCH=1
+    export LAZYGITGO_DETACHED_LAUNCH
+    ;;
+esac
+exec "$_here/lazygitgo.bin" "$@"
