@@ -1,0 +1,9 @@
+@echo off
+setlocal
+where node >nul 2>nul
+if errorlevel 1 (
+  echo joplin-terminal: node not found in PATH; install Node.js 18.17+ first. 1>&2
+  exit /b 127
+)
+node "%~dp0main.js" %*
+exit /b %ERRORLEVEL%

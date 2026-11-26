@@ -1,0 +1,9 @@
+#!/bin/sh
+# Native addons use Node-API and are ABI-stable across Node major versions,
+# so any system Node that satisfies Joplin's requirement works at runtime.
+if ! command -v node >/dev/null 2>&1; then
+  echo "joplin-terminal: 'node' not found in PATH; install Node.js 18.17+ first." >&2
+  exit 127
+fi
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$_here/main.js" "$@"

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "joplin-terminal",
+  "version-semver": "3.7.1",
+  "description": "Joplin Terminal - the official command-line note taking client",
+  "homepage": "https://joplinapp.org/",
+  "license": "AGPL-3.0-or-later",
+  "supports": "(linux | windows | osx) & (x64 | arm64)",
+  "dependencies": [
+    {
+      "name": "vcpkg-tool-nodejs",
+      "host": true
+    }
+  ]
+}

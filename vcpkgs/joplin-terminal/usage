@@ -1,0 +1,32 @@
+joplin-terminal provides the official Joplin Terminal (Joplin CLI Client),
+version 3.7.1, installed under tools/joplin-terminal/.
+
+Launchers
+  Linux/macOS: tools/joplin-terminal/joplin
+  Windows:     tools/joplin-terminal/joplin.cmd
+
+Runtime requirement
+  The launchers use the system Node.js from PATH. The bundled native addons
+  (keytar, sqlite3, sharp) use Node-API, which is ABI-stable across Node.js
+  major versions, so the runtime Node does not need to match the build-time
+  Node. Node 18.17+ is recommended (required by sharp); Joplin itself only
+  requires Node 10+. The launcher prints a clear error if node is not found.
+  On Linux, keytar also needs libsecret-1 at runtime for the system keyring.
+
+Common commands
+  joplin version
+  joplin help
+  joplin sync
+  joplin server start     # local Data API / Web Clipper service
+  joplin server status
+  joplin server stop
+
+The first launch creates the profile in ~/.config/joplin (Linux),
+~/Library/Application Support/joplin (macOS), or %USERPROFILE%\.config\joplin
+(Windows).
+
+Build note
+  Native addons are built for the host architecture, so Windows and macOS
+  triplets must be built on a matching host; the port refuses to build when
+  cross-compiling. npm installs transitive dependencies at build time, so the
+  build machine needs network access.
