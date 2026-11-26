@@ -23,7 +23,7 @@ TESTS := rclone python ruby guile vte notify dbus curl sqlite3 bdb \
          gdbm lmdb leveldb \
          mxml opendal \
          md4c cmark \
-         protobuf-c thrift_c_glib libcbor tinycbor msgpack avro fastipc lcm tachyon nng mosquitto zmq libgccjit luajit mir lightning reproc
+         protobuf-c thrift_c_glib libcbor tinycbor msgpack avro fastipc lcm tachyon nng mosquitto zmq libgccjit luajit mir lightning reproc fswatch
 
 # 无环境依赖、可直接跑的集合（mysql/pgsql 无服务时自身 SKIP 退出 0）
 RUN_SAFE := $(filter-out vte,$(TESTS))
@@ -59,6 +59,10 @@ $(BUILD)/test_vte: tests/test_vte.c vte_dyn.c tests/test_common.h
 # mysql/pgsql：仅编译期头文件路径
 $(BUILD)/test_mysql: CFLAGS += $(MYSQL_CFLAGS)
 $(BUILD)/test_pgsql: CFLAGS += $(PGSQL_CFLAGS)
+
+# fswatch：测试用 pthread 触发事件并停止监控
+$(BUILD)/test_fswatch: CFLAGS += -pthread
+$(BUILD)/test_fswatch: LDLIBS += -pthread
 
 clean:
 	rm -rf $(BUILD)
