@@ -45,6 +45,15 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<lmdb.h>)
+#    include <lmdb.h>
+#    define LMDB_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LMDB_DYN_HAVE_HEADER
 /* ---------- 类型（lmdb.h） ---------- */
 typedef struct MDB_env MDB_env;
 typedef struct MDB_txn MDB_txn;
@@ -86,7 +95,9 @@ typedef void MDB_rel_func(MDB_val *item, void *oldptr, void *newptr, void *relct
 typedef void MDB_assert_func(MDB_env *env, const char *msg);
 typedef int  MDB_msg_func(const char *msg, void *ctx);
 
-/* MDB_cursor_op 为 enum，ABI 等价 int */
+typedef int MDB_cursor_op; /* enum ABI == int */
+
+#endif /* LMDB_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）
@@ -293,7 +304,7 @@ WRAP_VOID(mdb_cursor_close, (MDB_cursor *a0), (a0))
 WRAP_RET(int, mdb_cursor_renew, (MDB_txn *a0, MDB_cursor *a1), (a0, a1), -1)
 WRAP_RET(MDB_txn *, mdb_cursor_txn, (MDB_cursor *a0), (a0), NULL)
 WRAP_RET(MDB_dbi, mdb_cursor_dbi, (MDB_cursor *a0), (a0), 0)
-WRAP_RET(int, mdb_cursor_get, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, int a3), (a0, a1, a2, a3), -1)
+WRAP_RET(int, mdb_cursor_get, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, MDB_cursor_op a3), (a0, a1, a2, a3), -1)
 WRAP_RET(int, mdb_cursor_put, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, unsigned int a3), (a0, a1, a2, a3), -1)
 WRAP_RET(int, mdb_cursor_del, (MDB_cursor *a0, unsigned int a1), (a0, a1), -1)
 WRAP_RET(int, mdb_cursor_count, (MDB_cursor *a0, size_t *a1), (a0, a1), -1)

@@ -21,7 +21,28 @@
  *     因此无需额外处理平台网络初始化。
  * ========================================================================== */
 
-#include <curl/curl.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<curl/curl.h>)
+#    include <curl/curl.h>
+#    define CURL_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef CURL_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+#include <stdarg.h>
+typedef void CURL;
+typedef enum { CURLE_OK = 0, CURLE_FAILED_INIT = 2 } CURLcode;
+typedef enum { CURLOPT_URL = 10002, CURLOPT_WRITEDATA = 10001, CURLOPT_ERRORBUFFER = 10010 } CURLoption;
+typedef enum { CURLINFO_NONE = 0 } CURLINFO;
+typedef enum { CURLVERSION_NOW = 4 } CURLversion;
+#define CURL_GLOBAL_DEFAULT 3
+struct curl_slist { char *data; struct curl_slist *next; };
+typedef struct curl_version_info_data curl_version_info_data;
+
+#endif /* CURL_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

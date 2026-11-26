@@ -40,6 +40,15 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<lightning.h>)
+#    include <lightning.h>
+#    define LIGHTNING_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LIGHTNING_DYN_HAVE_HEADER
 /* ---------- 类型（头文件原样内嵌，字段顺序即 ABI） ---------- */
 typedef signed char jit_int8_t;
 typedef unsigned char jit_uint8_t;
@@ -63,6 +72,8 @@ typedef int jit_code_t; /* enum，在 C ABI 中等价于 int */
 typedef void *(*jit_alloc_func_ptr)(size_t);
 typedef void *(*jit_realloc_func_ptr)(void *, size_t);
 typedef void (*jit_free_func_ptr)(void *);
+
+#endif /* LIGHTNING_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t lightning_handle = NULL;

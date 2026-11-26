@@ -26,7 +26,23 @@
 /* _POSIX_C_SOURCE 下 sys/types.h 不定义 BSD 类型，而 db.h 需要它们 */
 typedef unsigned int u_int;
 typedef unsigned long u_long;
-#include <db.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<db.h>)
+#    include <db.h>
+#    define BDB_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef BDB_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+#include <stdint.h>
+typedef struct __db DB;
+typedef struct __db_env DB_ENV;
+typedef uint32_t u_int32_t;
+
+#endif /* BDB_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

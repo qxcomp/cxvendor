@@ -72,6 +72,36 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Warray-parameter"
+#endif
+
+struct bufferevent_private;
+struct bufferevent_ops;
+struct evutil_weakrand_state;
+
+#if defined(__has_include)
+#  if __has_include(<event2/event.h>) && __has_include(<event2/event_struct.h>) && \
+      __has_include(<event2/bufferevent.h>) && __has_include(<event2/buffer.h>) && \
+      __has_include(<event2/dns.h>) && __has_include(<event2/http.h>) && \
+      __has_include(<event2/thread.h>) && __has_include(<event2/util.h>) && \
+      __has_include(<event2/rpc.h>) && __has_include(<event2/bufferevent_ssl.h>)
+#    include <event2/util.h>
+#    include <event2/event.h>
+#    include <event2/event_struct.h>
+#    include <event2/bufferevent.h>
+#    include <event2/bufferevent_ssl.h>
+#    include <event2/buffer.h>
+#    include <event2/dns.h>
+#    include <event2/http.h>
+#    include <event2/thread.h>
+#    include <event2/rpc.h>
+#    define LIBEVENT_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LIBEVENT_DYN_HAVE_HEADER
 /* ============================================================
  * 类型定义（官方头文件机械提取；未列出的 struct 为不透明句柄）
  * ============================================================ */
@@ -210,7 +240,6 @@ typedef socklen_t ev_socklen_t;
 
 /* 以下来自 2.1.13 内部头（对应导出符号的参数类型） */
 typedef int evutil_socket_t;
-typedef ev_uint16_t bufferevent_suspend_flags;
 typedef void (*deferred_cb_fn)(struct event_callback *, void *);
 typedef struct evdns_getaddrinfo_request *(*evdns_getaddrinfo_fn)(
     struct evdns_base *, const char *, const char *,
@@ -232,6 +261,33 @@ enum evhttp_transfer_encoding_header_status {
     TE_NO_CHUNKED
 };
 
+
+typedef ev_uint16_t bufferevent_suspend_flags;
+
+#endif /* LIBEVENT_DYN_HAVE_HEADER */
+
+/* 真头不导出的内部类型；无头时由上方内嵌块提供 */
+#ifdef LIBEVENT_DYN_HAVE_HEADER
+typedef uint16_t bufferevent_suspend_flags;
+typedef void (*deferred_cb_fn)(struct event_callback *, void *);
+typedef void (*evbuffer_cb)(struct evbuffer *, size_t, size_t, void *);
+typedef struct evdns_getaddrinfo_request *(*evdns_getaddrinfo_fn)(
+    struct evdns_base *, const char *, const char *,
+    const struct evutil_addrinfo *, evdns_getaddrinfo_cb, void *);
+typedef void (*evdns_getaddrinfo_cancel_fn)(struct evdns_getaddrinfo_request *);
+enum message_read_status {
+    ALL_DATA_READ = 1,
+    MORE_DATA_EXPECTED = 0,
+    DATA_CORRUPTED = -1,
+    REQUEST_CANCELED = -2,
+    DATA_TOO_LONG = -3
+};
+enum evhttp_transfer_encoding_header_status {
+    TE_INVALID,
+    TE_ENDS_IN_CHUNKED,
+    TE_NO_CHUNKED
+};
+#endif
 
 /* ============================================================
  * 动态加载（多候选路径）

@@ -1,4 +1,79 @@
-#include <SDL2/SDL.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<SDL2/SDL.h>)
+#    include <SDL2/SDL.h>
+#    define SDL2_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef SDL2_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+#include <stdint.h>
+#include <stdbool.h>
+typedef uint8_t Uint8;
+typedef uint16_t Uint16;
+typedef uint32_t Uint32;
+typedef uint64_t Uint64;
+typedef int8_t Sint8;
+typedef int16_t Sint16;
+typedef int32_t Sint32;
+typedef int64_t Sint64;
+typedef int SDL_bool;
+#define SDL_FALSE 0
+#define SDL_TRUE 1
+#define SDL_AUDIO_STOPPED 0
+#define SDL_CONTROLLER_TYPE_UNKNOWN 0
+#define SDL_SCANCODE_UNKNOWN 0
+typedef Uint32 SDL_TLSID;
+
+/* opaque structs */
+typedef struct SDL_Window SDL_Window;
+typedef struct SDL_Renderer SDL_Renderer;
+typedef struct SDL_Texture SDL_Texture;
+typedef struct SDL_Surface SDL_Surface;
+typedef struct SDL_Cursor SDL_Cursor;
+typedef struct SDL_RWops SDL_RWops;
+typedef struct SDL_GameController SDL_GameController;
+typedef struct SDL_mutex SDL_mutex;
+typedef struct SDL_cond SDL_cond;
+typedef struct SDL_sem SDL_sem;
+typedef struct SDL_Thread SDL_Thread;
+typedef struct SDL_MessageBoxData SDL_MessageBoxData;
+typedef struct SDL_Event SDL_Event;
+typedef struct SDL_AudioCVT SDL_AudioCVT;
+typedef struct SDL_AudioSpec SDL_AudioSpec;
+struct SDL_Rect { int x, y, w, h; };
+typedef struct SDL_Rect SDL_Rect;
+struct SDL_Point { int x, y; };
+typedef struct SDL_Point SDL_Point;
+struct SDL_version { Uint8 major, minor, patch; };
+typedef struct SDL_version SDL_version;
+/* scalar / enum */
+typedef Uint32 SDL_AudioDeviceID;
+typedef Uint16 SDL_AudioFormat;
+typedef int SDL_AudioStatus;
+typedef int SDL_BlendMode;
+typedef int SDL_GameControllerAxis;
+typedef int SDL_GameControllerButton;
+typedef int SDL_GameControllerType;
+typedef int SDL_HintCallback;
+typedef Sint32 SDL_Keycode;
+typedef Uint16 SDL_Keymod;
+typedef int SDL_RendererFlip;
+typedef int SDL_Scancode;
+typedef int SDL_SystemCursor;
+typedef int SDL_TimerID;
+typedef unsigned long SDL_threadID;
+typedef int (*SDL_EventFilter)(void *, SDL_Event *);
+typedef int (*SDL_ThreadFunction)(void *);
+typedef Uint32 (*SDL_TimerCallback)(Uint32, void *);
+
+typedef int SDL_eventaction;
+#define KMOD_NONE 0
+#define SDLK_UNKNOWN 0
+
+#endif /* SDL2_DYN_HAVE_HEADER */
+
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -226,13 +301,13 @@ int SDL_RenderCopy(SDL_Renderer *a, SDL_Texture *b, const SDL_Rect *c,
   return f(a, b, c, d);
 }
 int SDL_RenderCopyEx(SDL_Renderer *a, SDL_Texture *b, const SDL_Rect *c,
-                     const SDL_Rect *d, double e, const SDL_Point *f,
+                     const SDL_Rect *d, double e, const SDL_Point *pt,
                      SDL_RendererFlip g) {
   static int (*f)(SDL_Renderer *, SDL_Texture *, const SDL_Rect *,
                   const SDL_Rect *, double, const SDL_Point *,
                   SDL_RendererFlip);
   R(f, "SDL_RenderCopyEx", -1);
-  return f(a, b, c, d, e, f, g);
+  return f(a, b, c, d, e, pt, g);
 }
 int SDL_RenderDrawLine(SDL_Renderer *a, int b, int c, int d, int e) {
   static int (*f)(SDL_Renderer *, int, int, int, int);
@@ -359,10 +434,10 @@ void SDL_UnlockTexture(SDL_Texture *a) {
   R(f, "SDL_UnlockTexture", );
   f(a);
 }
-void SDL_QueryTexture(SDL_Texture *a, Uint32 *b, int *c, int *d, int *e) {
-  static void (*f)(SDL_Texture *, Uint32 *, int *, int *, int *);
-  R(f, "SDL_QueryTexture", );
-  f(a, b, c, d, e);
+int SDL_QueryTexture(SDL_Texture *a, Uint32 *b, int *c, int *d, int *e) {
+  static int (*f)(SDL_Texture *, Uint32 *, int *, int *, int *);
+  R(f, "SDL_QueryTexture", -1);
+  return f(a, b, c, d, e);
 }
 int SDL_SetTextureBlendMode(SDL_Texture *a, SDL_BlendMode b) {
   static int (*f)(SDL_Texture *, SDL_BlendMode);
@@ -511,9 +586,9 @@ void SDL_SetEventFilter(SDL_EventFilter a, void *b) {
   R(f, "SDL_SetEventFilter", );
   f(a, b);
 }
-int SDL_GetEventFilter(SDL_EventFilter *a, void **b) {
-  static int (*f)(SDL_EventFilter *, void **);
-  R(f, "SDL_GetEventFilter", 0);
+SDL_bool SDL_GetEventFilter(SDL_EventFilter *a, void **b) {
+  static SDL_bool (*f)(SDL_EventFilter *, void **);
+  R(f, "SDL_GetEventFilter", SDL_FALSE);
   return f(a, b);
 }
 void SDL_AddEventWatch(SDL_EventFilter a, void *b) {
@@ -623,8 +698,8 @@ void SDL_StopTextInput(void) {
   R(f, "SDL_StopTextInput", );
   f();
 }
-void SDL_SetTextInputRect(SDL_Rect *a) {
-  static void (*f)(SDL_Rect *);
+void SDL_SetTextInputRect(const SDL_Rect *a) {
+  static void (*f)(const SDL_Rect *);
   R(f, "SDL_SetTextInputRect", );
   f(a);
 }

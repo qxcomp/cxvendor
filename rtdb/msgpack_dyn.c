@@ -48,6 +48,15 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<msgpack.h>) && __has_include(<msgpack/sysdep.h>) && __has_include(<msgpack/pack_template.h>)
+#    include <msgpack.h>
+#    define MSGPACK_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MSGPACK_DYN_HAVE_HEADER
 /* ---------- 类型（include/msgpack/ 各公开头原样内嵌） ---------- */
 #if defined(unix) || defined(__unix) || defined(__linux__) || defined(__APPLE__) || \
     defined(__OpenBSD__) || defined(__NetBSD__) || defined(__QNX__) || \
@@ -207,6 +216,8 @@ typedef struct msgpack_vrefbuffer {
 
     msgpack_vrefbuffer_inner_buffer inner_buffer;
 } msgpack_vrefbuffer;
+
+#endif /* MSGPACK_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

@@ -52,6 +52,15 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<nghttp2/nghttp2.h>)
+#    include <nghttp2/nghttp2.h>
+#    define NGHTTP2_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef NGHTTP2_DYN_HAVE_HEADER
 /* ============================================================
 * 类型定义（按 nghttp2.h 核对的公开 ABI）
 * ============================================================ */
@@ -219,6 +228,8 @@ typedef struct {
 /* 注意：nghttp2.h 中另有 4 个内存分配器 typedef（nghttp2_malloc/free/
 * calloc/realloc），其参数为 mem_user_data；上面 WRAP 清单中的函数签名
 * 引用的是 nghttp2_mem 结构体字段类型，与上面 *_t 一致。 */
+
+#endif /* NGHTTP2_DYN_HAVE_HEADER */
 
 /* ============================================================
 * 全局状态

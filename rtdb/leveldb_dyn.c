@@ -44,7 +44,16 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<leveldb/c.h>)
+#    include <leveldb/c.h>
+#    define LEVELDB_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
 /* ---------- 类型（leveldb/c.h） ---------- */
+#ifndef LEVELDB_DYN_HAVE_HEADER
 typedef struct leveldb_t leveldb_t;
 typedef struct leveldb_cache_t leveldb_cache_t;
 typedef struct leveldb_comparator_t leveldb_comparator_t;
@@ -61,6 +70,7 @@ typedef struct leveldb_snapshot_t leveldb_snapshot_t;
 typedef struct leveldb_writablefile_t leveldb_writablefile_t;
 typedef struct leveldb_writebatch_t leveldb_writebatch_t;
 typedef struct leveldb_writeoptions_t leveldb_writeoptions_t;
+#endif /* LEVELDB_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

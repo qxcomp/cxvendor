@@ -19,9 +19,31 @@
  *   - 本封装对受影响的函数做运行时分支；未受影响的函数保持单一路径。
  * ========================================================================== */
 
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/avutil.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<libavcodec/avcodec.h>) && __has_include(<libavformat/avformat.h>) && __has_include(<libavutil/avutil.h>)
+#    include <libavcodec/avcodec.h>
+#    include <libavformat/avformat.h>
+#    include <libavutil/avutil.h>
+#    define FFMPEG_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef FFMPEG_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+#include <stdint.h>
+typedef struct AVCodec AVCodec;
+typedef struct AVCodecContext AVCodecContext;
+typedef struct AVDictionary AVDictionary;
+typedef struct AVFormatContext AVFormatContext;
+typedef struct AVInputFormat AVInputFormat;
+typedef struct AVPacket AVPacket;
+typedef struct AVFrame AVFrame;
+typedef struct AVChannelLayout AVChannelLayout;
+typedef enum AVCodecID { AV_CODEC_ID_NONE = 0 } AVCodecID;
+
+#endif /* FFMPEG_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

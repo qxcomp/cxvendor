@@ -49,6 +49,15 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<avro.h>)
+#    include <avro.h>
+#    define AVRO_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef AVRO_DYN_HAVE_HEADER
 /* ---------- 类型（avro.h 与 avro/ 各公开头原样内嵌） ---------- */
 enum avro_type_t {
     AVRO_STRING, AVRO_BYTES, AVRO_INT32, AVRO_INT64, AVRO_FLOAT,
@@ -113,6 +122,8 @@ typedef struct avro_value {
     avro_value_iface_t *iface;
     void *self;
 } avro_value_t;
+
+#endif /* AVRO_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

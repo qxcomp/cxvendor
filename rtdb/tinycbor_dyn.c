@@ -46,6 +46,16 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<tinycbor/cbor.h>) && __has_include(<tinycbor/cborjson.h>)
+#    include <tinycbor/cbor.h>
+#    include <tinycbor/cborjson.h>
+#    define TINYCBOR_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef TINYCBOR_DYN_HAVE_HEADER
 /* ---------- 类型（src/cbor.h / src/cborjson.h 原样内嵌） ---------- */
 typedef enum CborType {
     CborIntegerType     = 0x00,
@@ -252,6 +262,8 @@ enum CborToJsonFlags {
     CborConvertStringifyMapKeys = 8,
     CborConvertDefaultFlags = 0
 };
+
+#endif /* TINYCBOR_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

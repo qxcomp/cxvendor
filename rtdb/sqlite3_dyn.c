@@ -64,7 +64,23 @@
  *
  * ========================================================================== */
 
-#include <sqlite3.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<sqlite3.h>)
+#    include <sqlite3.h>
+#    define SQLITE3_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef SQLITE3_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+typedef struct sqlite3 sqlite3;
+typedef struct sqlite3_stmt sqlite3_stmt;
+#define SQLITE_ERROR 1
+#define SQLITE_NULL 5
+
+#endif /* SQLITE3_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

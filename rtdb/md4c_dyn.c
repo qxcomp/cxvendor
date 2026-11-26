@@ -52,6 +52,16 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<md4c.h>) && __has_include(<md4c-html.h>)
+#    include <md4c.h>
+#    include <md4c-html.h>
+#    define MD4C_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MD4C_DYN_HAVE_HEADER
 /* ---------- 类型（md4c.h 原样内嵌，字段顺序即 ABI） ---------- */
 typedef char          MD_CHAR;
 typedef unsigned      MD_SIZE;
@@ -249,6 +259,8 @@ typedef MD_PARSER MD_RENDERER;
 #define MD_HTML_FLAG_VERBATIM_ENTITIES 0x0002
 #define MD_HTML_FLAG_SKIP_UTF8_BOM    0x0004
 #define MD_HTML_FLAG_XHTML            0x0008
+
+#endif /* MD4C_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（双库：核心 + html；多候选路径）

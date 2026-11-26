@@ -43,6 +43,16 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<mir.h>) && __has_include(<mir-gen.h>)
+#    include <mir.h>
+#    include <mir-gen.h>
+#    define MIR_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MIR_DYN_HAVE_HEADER
 /* ---------- 类型（头文件原样内嵌，字段顺序即 ABI） ---------- */
 typedef struct MIR_context *MIR_context_t;
 typedef struct MIR_module *MIR_module_t;
@@ -120,6 +130,8 @@ typedef struct {
     MIR_type_t type;
     size_t size;
 } _MIR_arg_desc_t;
+
+#endif /* MIR_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t mir_handle = NULL;

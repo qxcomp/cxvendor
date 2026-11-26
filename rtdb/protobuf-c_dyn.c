@@ -51,7 +51,16 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<google/protobuf-c/protobuf-c.h>)
+#    include <google/protobuf-c/protobuf-c.h>
+#    define PROTOBUF_C_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
 /* ---------- 类型（protobuf-c.h 原样内嵌，字段顺序即 ABI） ---------- */
+#ifndef PROTOBUF_C_DYN_HAVE_HEADER
 typedef struct ProtobufCAllocator ProtobufCAllocator;
 typedef struct ProtobufCBuffer ProtobufCBuffer;
 typedef struct ProtobufCBufferSimple ProtobufCBufferSimple;
@@ -69,6 +78,7 @@ typedef struct ProtobufCServiceDescriptor ProtobufCServiceDescriptor;
 typedef int protobuf_c_boolean;
 typedef void (*ProtobufCClosure)(const ProtobufCMessage *, void *closure_data);
 typedef void (*ProtobufCServiceDestroy)(ProtobufCService *);
+#endif /* PROTOBUF_C_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

@@ -69,6 +69,19 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Warray-parameter"
+#endif
+
+#if defined(__has_include)
+#  if __has_include(<uv.h>)
+#    include <uv.h>
+#    define LIBUV_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LIBUV_DYN_HAVE_HEADER
 /* ============================================================
  * 类型定义（官方头文件机械提取；未列出的 struct 为不透明句柄）
  * ============================================================ */
@@ -276,6 +289,8 @@ typedef struct uv_thread_options_s uv_thread_options_t;
 union uv_any_handle { uv_async_t async; uv_check_t check; uv_fs_event_t fs_event; uv_fs_poll_t fs_poll; uv_handle_t handle; uv_idle_t idle; uv_pipe_t pipe; uv_poll_t poll; uv_prepare_t prepare; uv_process_t process; uv_stream_t stream; uv_tcp_t tcp; uv_timer_t timer; uv_tty_t tty; uv_udp_t udp; uv_signal_t signal; };
 union uv_any_req { uv_req_t req; uv_connect_t connect; uv_write_t write; uv_shutdown_t shutdown; uv_udp_send_t udp_send; uv_fs_t fs; uv_work_t work; uv_getaddrinfo_t getaddrinfo; uv_getnameinfo_t getnameinfo; uv_random_t random; };
 struct uv_loop_s { void* data; unsigned int active_handles; struct uv__queue handle_queue; union { void* unused; unsigned int count; } active_reqs; void* internal_fields; unsigned int stop_flag; unsigned long flags; int backend_fd; struct uv__queue pending_queue; struct uv__queue watcher_queue; uv__io_t** watchers; unsigned int nwatchers; unsigned int nfds; struct uv__queue wq; uv_mutex_t wq_mutex; uv_async_t wq_async; uv_rwlock_t cloexec_lock; uv_handle_t* closing_handles; struct uv__queue process_handles; struct uv__queue prepare_handles; struct uv__queue check_handles; struct uv__queue idle_handles; struct uv__queue async_handles; void (*async_unused)(void); uv__io_t async_io_watcher; int async_wfd; struct { void* min; unsigned int nelts; } timer_heap; uint64_t timer_counter; uint64_t time; int signal_pipefd[2]; uv__io_t signal_io_watcher; uv_signal_t child_watcher; int emfile_fd; uv__io_t inotify_read_watcher; void* inotify_watchers; int inotify_fd; };
+
+#endif /* LIBUV_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

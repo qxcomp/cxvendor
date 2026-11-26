@@ -48,6 +48,15 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<cbor.h>)
+#    include <cbor.h>
+#    define LIBCBOR_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LIBCBOR_DYN_HAVE_HEADER
 /* ---------- 类型（cbor/data.h、callbacks.h、common.h 原样内嵌） ---------- */
 typedef const unsigned char *cbor_data;
 typedef unsigned char *cbor_mutable_data;
@@ -158,6 +167,8 @@ struct cbor_callbacks {
 typedef void *(*_cbor_malloc_t)(size_t);
 typedef void *(*_cbor_realloc_t)(void*, size_t);
 typedef void (*_cbor_free_t)(void*);
+
+#endif /* LIBCBOR_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

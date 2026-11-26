@@ -45,6 +45,16 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<zmq.h>)
+#    define ZMQ_BUILD_DRAFT_API
+#    include <zmq.h>
+#    define ZMQ_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef ZMQ_DYN_HAVE_HEADER
 /* ---------- 类型（zmq.h 原样内嵌，字段顺序即 ABI） ---------- */
 typedef struct zmq_msg_t {
     unsigned char _[64] __attribute__((aligned(sizeof(void *))));
@@ -77,6 +87,8 @@ typedef void (zmq_thread_fn)(void *);
 #define ZMQ_SNDTIMEO 28
 #define ZMQ_RCVTIMEO 27
 #define ZMQ_EVENT_ALL 0xFFFF
+
+#endif /* ZMQ_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t zmq_handle = NULL;

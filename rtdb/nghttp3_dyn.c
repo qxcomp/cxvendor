@@ -52,6 +52,22 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<nghttp3/nghttp3.h>)
+#    include <nghttp3/nghttp3.h>
+#    undef nghttp3_conn_client_new
+#    undef nghttp3_conn_server_new
+#    undef nghttp3_settings_default
+#    undef nghttp3_conn_get_stream_priority
+#    undef nghttp3_conn_get_stream_priority2
+#    undef nghttp3_conn_set_server_stream_priority
+#    undef nghttp3_pri_parse_priority
+#    define NGHTTP3_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef NGHTTP3_DYN_HAVE_HEADER
 /* ============================================================
 * 类型定义（按 nghttp3.h 核对的公开 ABI）
 * ============================================================ */
@@ -195,6 +211,8 @@ typedef struct {
 #define NGHTTP3_ERR_MALFORMED_HTTP_HEADER -105
 #define NGHTTP3_ERR_FATAL -900
 #define NGHTTP3_ERR_NOMEM -901
+
+#endif /* NGHTTP3_DYN_HAVE_HEADER */
 
 /* ============================================================
 * 全局状态

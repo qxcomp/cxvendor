@@ -39,6 +39,15 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<fipc.h>)
+#    include <fipc.h>
+#    define FASTIPC_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef FASTIPC_DYN_HAVE_HEADER
 /* ---------- 类型（include/fipc.h 原样内嵌） ---------- */
 typedef struct fipc_listener fipc_listener_t;
 typedef struct fipc_conn fipc_conn_t;
@@ -69,6 +78,8 @@ typedef enum
 #define FIPC_CONSUMER 4
 #define FIPC_CLIENT 5
 #define FIPC_SERVER 6
+
+#endif /* FASTIPC_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t fastipc_handle = NULL;

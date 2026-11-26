@@ -47,6 +47,15 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<cmark.h>)
+#    include <cmark.h>
+#    define CMARK_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef CMARK_DYN_HAVE_HEADER
 /* ---------- 类型（cmark.h 原样内嵌，字段顺序即 ABI） ---------- */
 #define CMARK_VERSION ((0 << 16) | (31 << 8) | 2)
 #define CMARK_VERSION_STRING "0.31.2"
@@ -125,6 +134,8 @@ typedef enum {
 #define CMARK_OPT_NORMALIZE (1 << 8)
 #define CMARK_OPT_VALIDATE_UTF8 (1 << 9)
 #define CMARK_OPT_SMART (1 << 10)
+
+#endif /* CMARK_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

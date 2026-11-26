@@ -62,6 +62,15 @@ int mxml_dyn_libok(void);
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<mxml.h>)
+#    include <mxml.h>
+#    define MXML_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MXML_DYN_HAVE_HEADER
 /* ---------- 类型（mxml.h v4 原样内嵌 + v3 兼容 typedef） ---------- */
 typedef enum mxml_add_e { MXML_ADD_BEFORE, MXML_ADD_AFTER } mxml_add_t;
 typedef enum mxml_descend_e {
@@ -98,7 +107,9 @@ typedef void (*mxml_strfree_cb_t)(void *cbdata, char *s);
 typedef mxml_type_t (*mxml_type_cb_t)(void *cbdata, mxml_node_t *node);
 typedef const char *(*mxml_ws_cb_t)(void *cbdata, mxml_node_t *node, mxml_ws_t when);
 
-/* v3 兼容 typedef（仅用于 v3 独有 API 的对外原型，不与 v4 冲突） */
+#endif /* MXML_DYN_HAVE_HEADER */
+
+/* v3 兼容 typedef：真头不定义，两分支共用 */
 typedef void (*mxml_v3_custom_destroy_cb_t)(void *);
 typedef int (*mxml_v3_custom_load_cb_t)(mxml_node_t *, const char *);
 typedef char *(*mxml_v3_custom_save_cb_t)(mxml_node_t *);

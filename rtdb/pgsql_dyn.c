@@ -19,7 +19,23 @@
  *   - 基础符号验证使用 PQlibVersion（libpq 必然导出）。
  * ========================================================================== */
 
-#include <libpq-fe.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<libpq-fe.h>)
+#    include <libpq-fe.h>
+#    define PGSQL_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef PGSQL_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+typedef struct PGconn PGconn;
+typedef struct PGresult PGresult;
+typedef enum { CONNECTION_BAD = 1 } ConnStatusType;
+typedef enum { PGRES_FATAL_ERROR = 7 } ExecStatusType;
+
+#endif /* PGSQL_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

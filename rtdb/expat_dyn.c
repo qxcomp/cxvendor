@@ -47,6 +47,19 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Warray-parameter"
+#endif
+
+#if defined(__has_include)
+#  if __has_include(<expat.h>)
+#    include <expat.h>
+#    define EXPAT_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef EXPAT_DYN_HAVE_HEADER
 /* ============================================================
  * 类型定义（expat.h）
  * ============================================================ */
@@ -214,6 +227,8 @@ typedef struct {
     int (*convert)(void *data, const char *s);
     void (*release)(void *data);
 } XML_Encoding;
+
+#endif /* EXPAT_DYN_HAVE_HEADER */
 
 /* ---------- 回调 typedef ---------- */
 typedef void (*XML_ElementDeclHandler)(void *userData, const XML_Char *name, XML_Content *model);

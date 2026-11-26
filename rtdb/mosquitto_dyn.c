@@ -42,6 +42,16 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<mosquitto/libmosquitto.h>)
+#    include <mosquitto/libmosquitto.h>
+#    define MOSQUITTO_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MOSQUITTO_DYN_HAVE_HEADER
+
 /* ---------- 类型（mosquitto.h 原样内嵌，字段顺序即 ABI） ---------- */
 enum mosq_err_t {
     MOSQ_ERR_AUTH_CONTINUE = -4,
@@ -137,6 +147,8 @@ struct libmosquitto_tls {
     int (*pw_callback)(char *buf, int size, int rwflag, void *userdata);
     int cert_reqs;
 };
+
+#endif /* MOSQUITTO_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t mosquitto_handle = NULL;

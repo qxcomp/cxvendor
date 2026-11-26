@@ -41,6 +41,28 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<libgccjit.h>)
+#    include <libgccjit.h>
+#    define LIBGCCJIT_DYN_HAVE_HEADER 1
+    typedef enum gcc_jit_str_option gcc_jit_str_option;
+    typedef enum gcc_jit_int_option gcc_jit_int_option;
+    typedef enum gcc_jit_bool_option gcc_jit_bool_option;
+    typedef enum gcc_jit_output_kind gcc_jit_output_kind;
+    typedef enum gcc_jit_types gcc_jit_types;
+    typedef enum gcc_jit_function_kind gcc_jit_function_kind;
+    typedef enum gcc_jit_global_kind gcc_jit_global_kind;
+    typedef enum gcc_jit_tls_model gcc_jit_tls_model;
+    typedef enum gcc_jit_unary_op gcc_jit_unary_op;
+    typedef enum gcc_jit_binary_op gcc_jit_binary_op;
+    typedef enum gcc_jit_comparison gcc_jit_comparison;
+    typedef enum gcc_jit_fn_attribute gcc_jit_fn_attribute;
+    typedef enum gcc_jit_variable_attribute gcc_jit_variable_attribute;
+#  endif
+#endif
+
+#ifndef LIBGCCJIT_DYN_HAVE_HEADER
 /* ---------- 类型（头文件原样内嵌，字段顺序即 ABI） ---------- */
 typedef struct gcc_jit_context gcc_jit_context;
 typedef struct gcc_jit_result gcc_jit_result;
@@ -75,6 +97,8 @@ typedef int gcc_jit_binary_op;
 typedef int gcc_jit_comparison;
 typedef int gcc_jit_fn_attribute;
 typedef int gcc_jit_variable_attribute;
+
+#endif /* LIBGCCJIT_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t gccjit_handle = NULL;

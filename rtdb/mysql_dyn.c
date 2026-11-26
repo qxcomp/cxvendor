@@ -19,7 +19,22 @@
  *   - 错误信息通过 mysql_error() 获取，而非全局状态，封装层不额外缓存。
  * ========================================================================== */
 
-#include <mysql.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<mysql.h>)
+#    include <mysql.h>
+#    define MYSQL_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MYSQL_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+typedef struct MYSQL MYSQL;
+typedef struct MYSQL_RES MYSQL_RES;
+typedef char **MYSQL_ROW;
+
+#endif /* MYSQL_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

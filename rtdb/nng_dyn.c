@@ -43,6 +43,16 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<nng/nng.h>) && __has_include(<nng/supplemental/http/http.h>)
+#    include <nng/nng.h>
+#    include <nng/supplemental/http/http.h>
+#    define NNG_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef NNG_DYN_HAVE_HEADER
 /* ---------- 类型（nng.h / http.h 公开声明原样内嵌） ---------- */
 #define NNG_MAXADDRLEN (128)
 
@@ -245,6 +255,8 @@ typedef struct nng_http_handler nng_http_handler;
 typedef struct nng_http_server  nng_http_server;
 typedef struct nng_http_client  nng_http_client;
 typedef void (*nng_http_handler_func)(nng_http *, void *, nng_aio *);
+
+#endif /* NNG_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t nng_handle = NULL;

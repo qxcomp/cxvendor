@@ -19,7 +19,21 @@
  *   - 基础符号验证：mpv_client_api_version 是必然导出的稳定符号。
  * ========================================================================== */
 
-#include <mpv/client.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<mpv/client.h>)
+#    include <mpv/client.h>
+#    define MPV_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef MPV_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+typedef struct mpv_handle mpv_handle;
+typedef struct mpv_event mpv_event;
+
+#endif /* MPV_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

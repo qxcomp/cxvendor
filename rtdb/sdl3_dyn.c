@@ -1,4 +1,103 @@
-#include <SDL3/SDL.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<SDL3/SDL.h>)
+#    include <SDL3/SDL.h>
+#    define SDL3_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef SDL3_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+typedef uint8_t Uint8;
+typedef uint16_t Uint16;
+typedef uint32_t Uint32;
+typedef uint64_t Uint64;
+typedef int8_t Sint8;
+typedef int16_t Sint16;
+typedef int32_t Sint32;
+typedef int64_t Sint64;
+typedef int SDL_bool;
+#define SDL_FALSE 0
+#define SDL_TRUE 1
+#define SDL_AUDIO_STOPPED 0
+#define SDL_CONTROLLER_TYPE_UNKNOWN 0
+#define SDL_SCANCODE_UNKNOWN 0
+typedef Uint32 SDL_TLSID;
+
+/* opaque structs */
+typedef struct SDL_Window SDL_Window;
+typedef struct SDL_Renderer SDL_Renderer;
+typedef struct SDL_Texture SDL_Texture;
+typedef struct SDL_Surface SDL_Surface;
+typedef struct SDL_Cursor SDL_Cursor;
+typedef struct SDL_RWops SDL_RWops;
+typedef struct SDL_IOStream SDL_IOStream;
+typedef struct SDL_Gamepad SDL_Gamepad;
+typedef struct SDL_Camera SDL_Camera;
+typedef struct SDL_GPUDevice SDL_GPUDevice;
+typedef struct SDL_Palette SDL_Palette;
+typedef struct SDL_Mutex SDL_Mutex;
+typedef struct SDL_Condition SDL_Condition;
+typedef struct SDL_Semaphore SDL_Semaphore;
+typedef struct SDL_RWLock SDL_RWLock;
+typedef struct SDL_Thread SDL_Thread;
+typedef struct SDL_Event SDL_Event;
+typedef struct SDL_AudioSpec SDL_AudioSpec;
+typedef struct SDL_CameraSpec SDL_CameraSpec;
+typedef struct SDL_MessageBoxData SDL_MessageBoxData;
+struct SDL_Rect { int x, y, w, h; };
+typedef struct SDL_Rect SDL_Rect;
+struct SDL_FRect { float x, y, w, h; };
+typedef struct SDL_FRect SDL_FRect;
+struct SDL_FPoint { float x, y; };
+typedef struct SDL_FPoint SDL_FPoint;
+/* scalar / enum */
+typedef Uint32 SDL_AudioDeviceID;
+typedef Uint32 SDL_CameraID;
+typedef int SDL_BlendMode;
+typedef int SDL_Colorspace;
+typedef int SDL_EventAction;
+typedef int SDL_FlipMode;
+typedef int SDL_Folder;
+typedef int SDL_GamepadAxis;
+typedef int SDL_GamepadButton;
+typedef int SDL_GamepadType;
+typedef Uint32 SDL_GPUShaderFormat;
+typedef Uint32 SDL_InitFlags;
+typedef int SDL_IOStatus;
+typedef int SDL_IOWhence;
+typedef Sint32 SDL_JoystickID;
+typedef Uint32 SDL_Keycode;
+typedef Uint16 SDL_Keymod;
+typedef Uint32 SDL_MessageBoxFlags;
+typedef Uint32 SDL_MouseButtonFlags;
+typedef int SDL_PenID;
+typedef Uint32 SDL_PixelFormat;
+typedef Uint32 SDL_PropertiesID;
+typedef int SDL_ScaleMode;
+typedef Uint32 SDL_Scancode;
+typedef int SDL_SystemCursor;
+typedef int SDL_TextureAccess;
+typedef int (*SDL_ThreadFunction)(void *);
+typedef Uint64 SDL_ThreadID;
+typedef Uint64 SDL_TimerID;
+typedef void (*SDL_FunctionPointer)(void);
+typedef void *(*SDL_malloc_func)(size_t);
+typedef void *(*SDL_calloc_func)(size_t, size_t);
+typedef void *(*SDL_realloc_func)(void *, size_t);
+typedef void (*SDL_free_func)(void *);
+typedef bool (*SDL_EventFilter)(void *, SDL_Event *);
+typedef bool (*SDL_NSTimerCallback)(void *, Uint32);
+typedef bool (*SDL_TimerCallback)(void *, Uint32);
+
+typedef Uint64 SDL_WindowFlags;
+typedef Uint32 SDL_WindowID;
+
+#endif /* SDL3_DYN_HAVE_HEADER */
+
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,8 +176,8 @@ void SDL_Quit(void) {
   R(f, "SDL_Quit", );
   f();
 }
-bool SDL_WasInit(SDL_InitFlags a) {
-  static bool (*f)(SDL_InitFlags);
+SDL_InitFlags SDL_WasInit(SDL_InitFlags a) {
+  static SDL_InitFlags (*f)(SDL_InitFlags);
   R(f, "SDL_WasInit", 0);
   return f(a);
 }
@@ -112,10 +211,10 @@ bool SDL_ClearError(void) {
   R(f, "SDL_ClearError", 0);
   return f();
 }
-void SDL_GetVersion(SDL_version *a) {
-  static void (*f)(SDL_version *);
-  R(f, "SDL_GetVersion", );
-  f(a);
+int SDL_GetVersion(void) {
+  static int (*f)(void);
+  R(f, "SDL_GetVersion", 0);
+  return f();
 }
 const char *SDL_GetRevision(void) {
   static const char *(*f)(void);
@@ -127,12 +226,12 @@ int SDL_GetNumAllocations(void) {
   R(f, "SDL_GetNumAllocations", 0);
   return f();
 }
-void SDL_SetMemoryFunctions(SDL_malloc_func a, SDL_calloc_func b,
+bool SDL_SetMemoryFunctions(SDL_malloc_func a, SDL_calloc_func b,
                             SDL_realloc_func c, SDL_free_func d) {
-  static void (*f)(SDL_malloc_func, SDL_calloc_func, SDL_realloc_func,
+  static bool (*f)(SDL_malloc_func, SDL_calloc_func, SDL_realloc_func,
                    SDL_free_func);
-  R(f, "SDL_SetMemoryFunctions", );
-  f(a, b, c, d);
+  R(f, "SDL_SetMemoryFunctions", 0);
+  return f(a, b, c, d);
 }
 
 SDL_Window *SDL_CreateWindow(const char *a, int b, int c, SDL_WindowFlags d) {
@@ -255,7 +354,7 @@ bool SDL_SyncWindow(SDL_Window *a) {
   R(f, "SDL_SyncWindow", 0);
   return f(a);
 }
-bool SDL_GetWindowFlags(SDL_Window *a) {
+SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *a) {
   static SDL_WindowFlags (*f)(SDL_Window *);
   R(f, "SDL_GetWindowFlags", 0);
   return f(a);
@@ -320,11 +419,11 @@ bool SDL_RenderTexture(SDL_Renderer *a, SDL_Texture *b, const SDL_FRect *c,
 }
 bool SDL_RenderTextureRotated(SDL_Renderer *a, SDL_Texture *b,
                               const SDL_FRect *c, const SDL_FRect *d, double e,
-                              const SDL_FPoint *f, SDL_FlipMode g) {
+                              const SDL_FPoint *pt, SDL_FlipMode g) {
   static bool (*f)(SDL_Renderer *, SDL_Texture *, const SDL_FRect *,
                    const SDL_FRect *, double, const SDL_FPoint *, SDL_FlipMode);
   R(f, "SDL_RenderTextureRotated", 0);
-  return f(a, b, c, d, e, f, g);
+  return f(a, b, c, d, e, pt, g);
 }
 bool SDL_RenderTextureTiled(SDL_Renderer *a, SDL_Texture *b, const SDL_FRect *c,
                             float d, const SDL_FRect *d2) {
@@ -440,12 +539,12 @@ bool SDL_GetRenderScale(SDL_Renderer *a, float *b, float *c) {
   R(f, "SDL_GetRenderScale", 0);
   return f(a, b, c);
 }
-bool SDL_RenderReadPixels(SDL_Renderer *a, const SDL_Rect *b, SDL_Surface *c) {
-  static bool (*f)(SDL_Renderer *, const SDL_Rect *, SDL_Surface *);
+SDL_Surface *SDL_RenderReadPixels(SDL_Renderer *a, const SDL_Rect *b) {
+  static SDL_Surface *(*f)(SDL_Renderer *, const SDL_Rect *);
   R(f, "SDL_RenderReadPixels", 0);
-  return f(a, b, c);
+  return f(a, b);
 }
-void *SDL_GetRenderWindow(SDL_Renderer *a) {
+SDL_Window *SDL_GetRenderWindow(SDL_Renderer *a) {
   static SDL_Window *(*f)(SDL_Renderer *);
   R(f, "SDL_GetRenderWindow", 0);
   return f(a);
@@ -486,21 +585,21 @@ bool SDL_UpdateTexture(SDL_Texture *a, const SDL_Rect *b, const void *c,
   return f(a, b, c, d);
 }
 bool SDL_UpdateYUVTexture(SDL_Texture *a, const SDL_Rect *b, const Uint8 *c,
-                          int d, const Uint8 *e, int f, const Uint8 *g, int h) {
+                          int d, const Uint8 *e, int pitch2, const Uint8 *g, int h) {
   static bool (*f)(SDL_Texture *, const SDL_Rect *, const Uint8 *, int,
                    const Uint8 *, int, const Uint8 *, int);
   R(f, "SDL_UpdateYUVTexture", 0);
-  return f(a, b, c, d, e, f, g, h);
+  return f(a, b, c, d, e, pitch2, g, h);
 }
 bool SDL_LockTexture(SDL_Texture *a, const SDL_Rect *b, void **c, int *d) {
   static bool (*f)(SDL_Texture *, const SDL_Rect *, void **, int *);
   R(f, "SDL_LockTexture", 0);
   return f(a, b, c, d);
 }
-bool SDL_UnlockTexture(SDL_Texture *a) {
-  static bool (*f)(SDL_Texture *);
-  R(f, "SDL_UnlockTexture", 0);
-  return f(a);
+void SDL_UnlockTexture(SDL_Texture *a) {
+  static void (*f)(SDL_Texture *);
+  R(f, "SDL_UnlockTexture", );
+  f(a);
 }
 bool SDL_GetTextureSize(SDL_Texture *a, float *b, float *c) {
   static bool (*f)(SDL_Texture *, float *, float *);
@@ -712,10 +811,10 @@ bool SDL_GetEventFilter(SDL_EventFilter *a, void **b) {
   R(f, "SDL_GetEventFilter", 0);
   return f(a, b);
 }
-void SDL_AddEventWatch(SDL_EventFilter a, void *b) {
-  static void (*f)(SDL_EventFilter, void *);
-  R(f, "SDL_AddEventWatch", );
-  f(a, b);
+bool SDL_AddEventWatch(SDL_EventFilter a, void *b) {
+  static bool (*f)(SDL_EventFilter, void *);
+  R(f, "SDL_AddEventWatch", 0);
+  return f(a, b);
 }
 void SDL_RemoveEventWatch(SDL_EventFilter a, void *b) {
   static void (*f)(SDL_EventFilter, void *);
@@ -732,9 +831,9 @@ void SDL_FlushEvents(Uint32 a, Uint32 b) {
   R(f, "SDL_FlushEvents", );
   f(a, b);
 }
-bool SDL_PeepEvents(SDL_Event *a, int b, SDL_EventAction c, Uint32 d,
-                    Uint32 e) {
-  static bool (*f)(SDL_Event *, int, SDL_EventAction, Uint32, Uint32);
+int SDL_PeepEvents(SDL_Event *a, int b, SDL_EventAction c, Uint32 d,
+                   Uint32 e) {
+  static int (*f)(SDL_Event *, int, SDL_EventAction, Uint32, Uint32);
   R(f, "SDL_PeepEvents", 0);
   return f(a, b, c, d, e);
 }
@@ -850,25 +949,25 @@ bool SDL_SetTextInputEnabled(bool a) {
   return f(a);
 }
 
-bool SDL_GetMouseState(float *a, float *b) {
-  static bool (*f)(float *, float *);
+SDL_MouseButtonFlags SDL_GetMouseState(float *a, float *b) {
+  static SDL_MouseButtonFlags (*f)(float *, float *);
   R(f, "SDL_GetMouseState", 0);
   return f(a, b);
 }
-bool SDL_GetGlobalMouseState(float *a, float *b) {
-  static bool (*f)(float *, float *);
+SDL_MouseButtonFlags SDL_GetGlobalMouseState(float *a, float *b) {
+  static SDL_MouseButtonFlags (*f)(float *, float *);
   R(f, "SDL_GetGlobalMouseState", 0);
   return f(a, b);
 }
-bool SDL_GetRelativeMouseState(float *a, float *b) {
-  static bool (*f)(float *, float *);
+SDL_MouseButtonFlags SDL_GetRelativeMouseState(float *a, float *b) {
+  static SDL_MouseButtonFlags (*f)(float *, float *);
   R(f, "SDL_GetRelativeMouseState", 0);
   return f(a, b);
 }
-bool SDL_WarpMouseInWindow(SDL_Window *a, float b, float c) {
-  static bool (*f)(SDL_Window *, float, float);
-  R(f, "SDL_WarpMouseInWindow", 0);
-  return f(a, b, c);
+void SDL_WarpMouseInWindow(SDL_Window *a, float b, float c) {
+  static void (*f)(SDL_Window *, float, float);
+  R(f, "SDL_WarpMouseInWindow", );
+  f(a, b, c);
 }
 bool SDL_WarpMouseGlobal(float a, float b) {
   static bool (*f)(float, float);
@@ -886,10 +985,10 @@ bool SDL_GetRelativeMouseMode(void) {
   return f();
 }
 SDL_Cursor *SDL_CreateCursor(const Uint8 *a, const Uint8 *b, int c, int d,
-                             int e, int f) {
+                             int e, int hot_y) {
   static SDL_Cursor *(*f)(const Uint8 *, const Uint8 *, int, int, int, int);
   R(f, "SDL_CreateCursor", 0);
-  return f(a, b, c, d, e, f);
+  return f(a, b, c, d, e, hot_y);
 }
 SDL_Cursor *SDL_CreateColorCursor(SDL_Surface *a, int b, int c) {
   static SDL_Cursor *(*f)(SDL_Surface *, int, int);
@@ -1030,12 +1129,19 @@ SDL_AudioDeviceID *SDL_GetAudioDevices(int *a) {
   return f(a);
 }
 
-SDL_Thread *SDL_CreateThread(SDL_ThreadFunction a, const char *b, void *c,
-                             SDL_PropertiesID d) {
+/* SDL3 上游把 SDL_CreateThread 定义为宏，真实导出为 SDL_CreateThreadRuntime */
+#ifdef SDL_CreateThread
+#undef SDL_CreateThread
+#endif
+SDL_Thread *SDL_CreateThread(SDL_ThreadFunction a, const char *b, void *c) {
   static SDL_Thread *(*f)(SDL_ThreadFunction, const char *, void *,
-                          SDL_PropertiesID);
-  R(f, "SDL_CreateThread", 0);
-  return f(a, b, c, d);
+                          SDL_FunctionPointer, SDL_FunctionPointer);
+  if (!f) {
+    if (!O()) return 0;
+    *(void **)(&f) = Y("SDL_CreateThreadRuntime");
+    if (!f) return 0;
+  }
+  return f(a, b, c, NULL, NULL);
 }
 void SDL_WaitThread(SDL_Thread *a, int *b) {
   static void (*f)(SDL_Thread *, int *);
@@ -1112,10 +1218,10 @@ void SDL_DestroySemaphore(SDL_Semaphore *a) {
   R(f, "SDL_DestroySemaphore", );
   f(a);
 }
-bool SDL_WaitSemaphore(SDL_Semaphore *a) {
-  static bool (*f)(SDL_Semaphore *);
-  R(f, "SDL_WaitSemaphore", 0);
-  return f(a);
+void SDL_WaitSemaphore(SDL_Semaphore *a) {
+  static void (*f)(SDL_Semaphore *);
+  R(f, "SDL_WaitSemaphore", );
+  f(a);
 }
 bool SDL_TryWaitSemaphore(SDL_Semaphore *a) {
   static bool (*f)(SDL_Semaphore *);
@@ -1127,10 +1233,10 @@ bool SDL_WaitSemaphoreTimeout(SDL_Semaphore *a, Sint32 b) {
   R(f, "SDL_WaitSemaphoreTimeout", 0);
   return f(a, b);
 }
-bool SDL_SignalSemaphore(SDL_Semaphore *a) {
-  static bool (*f)(SDL_Semaphore *);
-  R(f, "SDL_SignalSemaphore", 0);
-  return f(a);
+void SDL_SignalSemaphore(SDL_Semaphore *a) {
+  static void (*f)(SDL_Semaphore *);
+  R(f, "SDL_SignalSemaphore", );
+  f(a);
 }
 SDL_Condition *SDL_CreateCondition(void) {
   static SDL_Condition *(*f)(void);
@@ -1153,8 +1259,8 @@ void SDL_BroadcastCondition(SDL_Condition *a) {
   f(a);
 }
 
-char *SDL_GetBasePath(void) {
-  static char *(*f)(void);
+const char *SDL_GetBasePath(void) {
+  static const char *(*f)(void);
   R(f, "SDL_GetBasePath", 0);
   return f();
 }
@@ -1163,8 +1269,8 @@ char *SDL_GetPrefPath(const char *a, const char *b) {
   R(f, "SDL_GetPrefPath", 0);
   return f(a, b);
 }
-char *SDL_GetUserFolder(SDL_Folder a) {
-  static char *(*f)(SDL_Folder);
+const char *SDL_GetUserFolder(SDL_Folder a) {
+  static const char *(*f)(SDL_Folder);
   R(f, "SDL_GetUserFolder", 0);
   return f(a);
 }
@@ -1499,13 +1605,13 @@ unsigned long SDL_strtoul(const char *a, char **b, int c) {
   R(f, "SDL_strtoul", 0);
   return f(a, b, c);
 }
-Sint64 SDL_strtoll(const char *a, char **b, int c) {
-  static Sint64 (*f)(const char *, char **, int);
+long long SDL_strtoll(const char *a, char **b, int c) {
+  static long long (*f)(const char *, char **, int);
   R(f, "SDL_strtoll", 0);
   return f(a, b, c);
 }
-Uint64 SDL_strtoull(const char *a, char **b, int c) {
-  static Uint64 (*f)(const char *, char **, int);
+unsigned long long SDL_strtoull(const char *a, char **b, int c) {
+  static unsigned long long (*f)(const char *, char **, int);
   R(f, "SDL_strtoull", 0);
   return f(a, b, c);
 }

@@ -46,6 +46,15 @@
  #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<opendal.h>)
+#    include <opendal.h>
+#    define OPENDAL_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef OPENDAL_DYN_HAVE_HEADER
 /* ---------- 类型（opendal.h 原样内嵌，字段顺序即 ABI） ---------- */
 #define OPENDAL_SEEK_SET 0
 #define OPENDAL_SEEK_CUR 1
@@ -334,6 +343,8 @@ typedef struct opendal_result_copier_next {
   bool has_next;
   struct opendal_error *error;
 } opendal_result_copier_next;
+
+#endif /* OPENDAL_DYN_HAVE_HEADER */
 
 /* ============================================================
  * 动态加载（多候选路径）

@@ -25,7 +25,36 @@
  *   - Indexing（高级索引回调）
  * ========================================================================== */
 
-#include <clang-c/Index.h>
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<clang-c/Index.h>)
+#    include <clang-c/Index.h>
+#    define CLANG_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef CLANG_DYN_HAVE_HEADER
+/* ---------- 类型（头文件缺失时的最小 ABI 回退） ---------- */
+typedef void *CXIndex;
+typedef void *CXTranslationUnit;
+typedef void *CXFile;
+typedef void *CXClientData;
+typedef void *CXDiagnostic;
+typedef struct { const char *data; unsigned private_flags; } CXString;
+typedef struct { unsigned kind; int xdata; void *data[3]; } CXCursor;
+struct CXUnsavedFile { const char *Filename; unsigned long Length; const char *Contents; };
+typedef struct CXUnsavedFile CXUnsavedFile;
+typedef void (*CXCursorVisitor)(CXCursor, CXCursor, CXClientData);
+typedef enum CXCursorKind { CXCursor_InvalidFile = 70 } CXCursorKind;
+typedef enum CXDiagnosticSeverity { CXDiagnostic_Ignored = 0 } CXDiagnosticSeverity;
+typedef enum CXTypeKind { CXType_Invalid = 0 } CXTypeKind;
+typedef struct { enum CXTypeKind kind; void *data[2]; } CXType;
+typedef struct { void *ptr_data[2]; unsigned int_data; } CXSourceLocation;
+typedef struct { void *ptr_data[2]; unsigned begin_int_data; unsigned end_int_data; } CXSourceRange;
+typedef struct CXStringImpl CXStringImpl;
+
+#endif /* CLANG_DYN_HAVE_HEADER */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

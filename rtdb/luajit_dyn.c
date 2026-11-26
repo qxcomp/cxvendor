@@ -43,6 +43,17 @@
   #define PATH_SEP ':'
 #endif
 
+/* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
+#if defined(__has_include)
+#  if __has_include(<lua.h>) && __has_include(<luajit.h>)
+#    include <lua.h>
+#    include <luajit.h>
+#    include <lauxlib.h>
+#    define LUAJIT_DYN_HAVE_HEADER 1
+#  endif
+#endif
+
+#ifndef LUAJIT_DYN_HAVE_HEADER
 /* ---------- 类型（头文件原样内嵌，字段顺序即 ABI） ---------- */
 typedef struct lua_State lua_State;
 typedef struct lua_Debug lua_Debug;
@@ -81,6 +92,8 @@ struct luaL_Buffer {
     lua_State *L;
     char buffer[LUAL_BUFFERSIZE];
 };
+
+#endif /* LUAJIT_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
 static lib_handle_t luajit_handle = NULL;
