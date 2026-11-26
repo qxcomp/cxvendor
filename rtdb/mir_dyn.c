@@ -222,7 +222,7 @@ static int mir_do_load(const char *library_path) {
         fprintf(stderr, "mir_dyn: cannot load mir (%s)\n", lib_error());
         return -1;
     }
-    fprintf(stderr, "mir_dyn: loaded mir %d %s\n", res, candidates[res]);
+    fprintf(stderr, "mir_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
@@ -240,10 +240,10 @@ void mir_dyn_cleanup(void) {
     mir_init_state = 0;
 }
 
-int mir_dyn_libok(void) { return mir_init_state == 1 && mir_handle != NULL; }
+int mir_libok(void) { return mir_init_state == 1 && mir_handle != NULL; }
 
 int mir_dyn_has_symbol(const char *name) {
-    if (!mir_dyn_libok()) return 0;
+    if (!mir_libok()) return 0;
     return mir_sym(name) != NULL;
 }
 
@@ -252,7 +252,7 @@ int mir_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!mir_dyn_libok()) return fallback;                                 \
+        if (!mir_libok()) return fallback;                                     \
         *(void **)(&fn) = mir_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "mir_dyn: dlsym failed: %s\n", #name);             \
@@ -265,7 +265,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!mir_dyn_libok()) return;                                          \
+        if (!mir_libok()) return;                                              \
         *(void **)(&fn) = mir_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "mir_dyn: dlsym failed: %s\n", #name);             \
@@ -279,7 +279,7 @@ void name params {                                                             \
     static __typeof__(name) *fn = NULL;                                        \
     void *r;                                                                    \
     if (!fn) {                                                                 \
-        if (!mir_dyn_libok()) return (ret)0;                                   \
+        if (!mir_libok()) return (ret)0;                                       \
         *(void **)(&fn) = mir_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "mir_dyn: dlsym failed: %s\n", #name);             \

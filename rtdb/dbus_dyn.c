@@ -411,7 +411,7 @@ static int push_bare_names(const char **candidates,
 /* ============================================================
  * 加载与锚点符号验证
  * ============================================================ */
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_err;
     void *sym_msg;
@@ -439,8 +439,7 @@ static int try_candidate(const char *path) {
         fprintf(stderr, "dbus_dyn: dbus_get_version not found "
                         "(libdbus < 1.10?), version reported as 0\n");
     }
-    fprintf(stderr, "dbus_dyn: loaded %s (libdbus %s)\n",
-            path, dbus_version_str);
+    fprintf(stderr, "dbus_dyn: loaded %d %s (libdbus %s)\n", idx, path, dbus_version_str);
     return 0;
 }
 
@@ -530,7 +529,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -545,7 +544,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int dbus_dyn_libok(void) {
+int dbus_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && dbus_handle_lib != NULL) ? 1 : 0;
@@ -571,28 +570,28 @@ void dbus_dyn_cleanup(void) {
 }
 
 const char *dbus_dyn_version(void) {
-    if (init_state == 0) dbus_dyn_libok();
+    if (init_state == 0) dbus_libok();
     return dbus_version_str;
 }
 
 int dbus_dyn_major(void) {
-    if (init_state == 0) dbus_dyn_libok();
+    if (init_state == 0) dbus_libok();
     return dbus_lib_major;
 }
 
 int dbus_dyn_minor(void) {
-    if (init_state == 0) dbus_dyn_libok();
+    if (init_state == 0) dbus_libok();
     return dbus_lib_minor;
 }
 
 int dbus_dyn_micro(void) {
-    if (init_state == 0) dbus_dyn_libok();
+    if (init_state == 0) dbus_libok();
     return dbus_lib_micro;
 }
 
 int dbus_dyn_has_symbol(const char *name) {
     if (!name || !*name) return 0;
-    if (!dbus_dyn_libok()) return 0;
+    if (!dbus_libok()) return 0;
     return get_sym(dbus_handle_lib, name) != NULL;
 }
 
@@ -603,7 +602,7 @@ int dbus_dyn_has_symbol(const char *name) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!dbus_dyn_libok()) return fallback;                    \
+        if (!dbus_libok()) return fallback;                        \
         *(void **)(&fn) = get_sym(dbus_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "dbus_dyn: dlsym failed: %s\n",        \
@@ -618,7 +617,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!dbus_dyn_libok()) return;                             \
+        if (!dbus_libok()) return;                                 \
         *(void **)(&fn) = get_sym(dbus_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "dbus_dyn: dlsym failed: %s\n",        \
@@ -653,7 +652,7 @@ void dbus_set_error(DBusError *error, const char *name,
     static void (*fn)(DBusError *, const char *, const char *, ...) = NULL;
     char buf[1024];
     if (!fn) {
-        if (!dbus_dyn_libok()) return;
+        if (!dbus_libok()) return;
         *(void **)(&fn) = get_sym(dbus_handle_lib, "dbus_set_error");
         if (!fn) {
             fprintf(stderr, "dbus_dyn: dlsym failed: dbus_set_error\n");
@@ -693,7 +692,7 @@ WRAP_RET(dbus_bool_t, dbus_setenv,
 
 void dbus_get_version(int *major_version_p, int *minor_version_p,
                       int *micro_version_p) {
-    if (init_state == 0) dbus_dyn_libok();
+    if (init_state == 0) dbus_libok();
     if (major_version_p) *major_version_p = dbus_lib_major;
     if (minor_version_p) *minor_version_p = dbus_lib_minor;
     if (micro_version_p) *micro_version_p = dbus_lib_micro;
@@ -1042,7 +1041,7 @@ DBusMessage *dbus_message_new_error_printf(
     char buf[1024];
     va_list ap;
     if (!fn) {
-        if (!dbus_dyn_libok()) return NULL;
+        if (!dbus_libok()) return NULL;
         *(void **)(&fn) =
             get_sym(dbus_handle_lib, "dbus_message_new_error_printf");
         if (!fn) {
@@ -1161,7 +1160,7 @@ dbus_bool_t dbus_message_append_args(DBusMessage *message,
     va_list ap;
     dbus_bool_t r;
     if (!fn) {
-        if (!dbus_dyn_libok()) return 0;
+        if (!dbus_libok()) return 0;
         *(void **)(&fn) =
             get_sym(dbus_handle_lib, "dbus_message_append_args_valist");
         if (!fn) {
@@ -1183,7 +1182,7 @@ dbus_bool_t dbus_message_get_args(DBusMessage *message, DBusError *error,
     va_list ap;
     dbus_bool_t r;
     if (!fn) {
-        if (!dbus_dyn_libok()) return 0;
+        if (!dbus_libok()) return 0;
         *(void **)(&fn) =
             get_sym(dbus_handle_lib, "dbus_message_get_args_valist");
         if (!fn) {

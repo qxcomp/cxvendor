@@ -164,7 +164,8 @@ static int do_load(const char *library_path) {
 #endif
     candidates[n] = NULL;
 
-    for (int i = 0; i < n; i++) {
+    int i;
+    for (i = 0; i < n; i++) {
         mysql_handle = load_lib(candidates[i]);
         if (mysql_handle) break;
     }
@@ -180,6 +181,7 @@ static int do_load(const char *library_path) {
         mysql_handle = NULL;
         return -1;
     }
+    fprintf(stderr, "mysql_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 

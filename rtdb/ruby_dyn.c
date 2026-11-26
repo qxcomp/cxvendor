@@ -10,7 +10,7 @@
  *   6. 跨平台：Unix/macOS 用 dlopen/dlsym；Windows 用 LoadLibrary/GetProcAddress。
  *   7. 搜索顺序：显式路径 > RUBY_DYN_LIB > 系统搜索路径 > 默认库名
  *      > Nix / Homebrew / rbenv / asdf / 平台默认路径。
- *   8. 线程安全：首次调用 ruby_dyn_libok() 或任一封装函数时完成加载。
+ *   8. 线程安全：首次调用 ruby_libok() 或任一封装函数时完成加载。
  *
  * 版本：
  *   - 面向 Ruby 2.7 与 3.x（3.0 - 3.6 库名都会尝试）。
@@ -241,7 +241,7 @@ static int push_ruby_bare(const char **candidates,
 /* ============================================================
  * 版本探测
  * ============================================================ */
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_init;
     void *sym_setup;
@@ -289,7 +289,7 @@ static int try_candidate(const char *path) {
     ruby_minor = min;
     snprintf(ruby_version_str, sizeof(ruby_version_str), "%s", ver);
     ruby_platform_str = (const char *)get_sym(h, "ruby_platform");
-    fprintf(stderr, "ruby_dyn: loaded %s (Ruby %s)\n", path, ruby_version_str);
+    fprintf(stderr, "ruby_dyn: loaded %d %s (Ruby %s)\n", idx, path, ruby_version_str);
     return 0;
 }
 
@@ -417,7 +417,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -432,7 +432,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int ruby_dyn_libok(void) {
+int ruby_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && ruby_handle_lib != NULL) ? 1 : 0;
@@ -479,22 +479,22 @@ void ruby_dyn_cleanup(void) {
 }
 
 int ruby_dyn_major(void) {
-    if (init_state == 0) ruby_dyn_libok();
+    if (init_state == 0) ruby_libok();
     return ruby_major;
 }
 
 int ruby_dyn_minor(void) {
-    if (init_state == 0) ruby_dyn_libok();
+    if (init_state == 0) ruby_libok();
     return ruby_minor;
 }
 
 const char *ruby_dyn_version(void) {
-    if (init_state == 0) ruby_dyn_libok();
+    if (init_state == 0) ruby_libok();
     return ruby_version_str;
 }
 
 const char *ruby_dyn_platform(void) {
-    if (init_state == 0) ruby_dyn_libok();
+    if (init_state == 0) ruby_libok();
     return ruby_platform_str;
 }
 
@@ -510,7 +510,7 @@ VALUE ruby_dyn_qundef(void) { return RUBY_DYN_QUNDEF; }
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!ruby_dyn_libok()) return fallback;                    \
+        if (!ruby_libok()) return fallback;                        \
         *(void **)(&fn) = get_sym(ruby_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "ruby_dyn: dlsym failed: %s\n",        \
@@ -525,7 +525,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!ruby_dyn_libok()) return;                             \
+        if (!ruby_libok()) return;                                 \
         *(void **)(&fn) = get_sym(ruby_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "ruby_dyn: dlsym failed: %s\n",        \

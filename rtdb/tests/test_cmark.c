@@ -15,7 +15,7 @@ typedef enum { CMARK_NODE_NONE = 0, CMARK_NODE_DOCUMENT = 1,
 typedef enum { CMARK_EVENT_DONE = 1 } cmark_event_type;
 
 extern int  cmark_dyn_init(const char *);
-extern int  cmark_dyn_libok(void);
+extern int  cmark_libok(void);
 extern void cmark_dyn_cleanup(void);
 extern int  cmark_dyn_has_symbol(const char *);
 
@@ -47,7 +47,7 @@ int main(void) {
     if (cmark_dyn_init(NULL) != 0)
         TEST_SKIP("libcmark not installed, skipping cmark_dyn test\n");
 
-    errs += CHECK(cmark_dyn_libok());
+    errs += CHECK(cmark_libok());
     errs += CHECK(cmark_dyn_has_symbol("cmark_markdown_to_html"));
     errs += CHECK(cmark_dyn_has_symbol("cmark_parse_document"));
     errs += CHECK(cmark_dyn_has_symbol("cmark_render_html"));

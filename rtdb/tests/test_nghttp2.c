@@ -50,7 +50,7 @@ typedef int (*nghttp2_on_frame_recv_cb)(nghttp2_session *session,
 
 /* ---- 封装函数声明（定义在 ../nghttp2_dyn.c） ---- */
 int nghttp2_dyn_init(const char *library_path);
-int nghttp2_dyn_libok(void);
+int nghttp2_libok(void);
 void nghttp2_dyn_cleanup(void);
 
 nghttp2_info *nghttp2_version(int least_version);
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     if (nghttp2_dyn_init(argc > 1 ? argv[1] : NULL) != 0) {
         TEST_SKIP("libnghttp2 不可加载\n");
     }
-    failures += CHECK(nghttp2_dyn_libok() != 0);
+    failures += CHECK(nghttp2_libok() != 0);
 
     /* 1. version */
     nghttp2_info *v = nghttp2_version(0);

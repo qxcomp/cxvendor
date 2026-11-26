@@ -368,11 +368,11 @@ static int expat_do_load(const char *library_path) {
         if (expat_handle) { free_lib(expat_handle); expat_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "expat_dyn: loaded expat (2.9 headers)\n");
+    fprintf(stderr, "expat_dyn: loaded %d %s (2.9 headers)\n", i, candidates[i]);
     return 0;
 }
 
-int expat_dyn_libok(void) {
+int expat_libok(void) {
     if (expat_init_state == 0)
         expat_init_state = (expat_do_load(NULL) == 0) ? 1 : -1;
     return (expat_init_state == 1 && expat_handle != NULL) ? 1 : 0;
@@ -394,7 +394,7 @@ void expat_dyn_cleanup(void) {
 }
 
 int expat_dyn_has_symbol(const char *name) {
-    if (!expat_dyn_libok()) return 0;
+    if (!expat_libok()) return 0;
     return expat_sym(name) != NULL;
 }
 
@@ -405,7 +405,7 @@ int expat_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!expat_dyn_libok()) return fallback;                           \
+        if (!expat_libok()) return fallback;                               \
         *(void **)(&fn) = expat_sym(#name);                                \
         if (!fn) {                                                         \
             fprintf(stderr, "expat_dyn: dlsym failed: %s\n", #name);       \
@@ -419,7 +419,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!expat_dyn_libok()) return;                                    \
+        if (!expat_libok()) return;                                        \
         *(void **)(&fn) = expat_sym(#name);                                \
         if (!fn) {                                                         \
             fprintf(stderr, "expat_dyn: dlsym failed: %s\n", #name);       \

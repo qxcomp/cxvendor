@@ -165,11 +165,11 @@ static int lcm_do_load(const char *library_path) {
         if (lcm_lib_handle) { free_lib(lcm_lib_handle); lcm_lib_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "lcm_dyn: loaded lcm %d %s\n", res, candidates[res]);
+    fprintf(stderr, "lcm_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int lcm_dyn_libok(void) {
+int lcm_libok(void) {
     if (lcm_init_state == 0)
         lcm_init_state = (lcm_do_load(NULL) == 0) ? 1 : -1;
     return (lcm_init_state == 1 && lcm_lib_handle != NULL) ? 1 : 0;
@@ -190,7 +190,7 @@ void lcm_dyn_cleanup(void) {
 }
 
 int lcm_dyn_has_symbol(const char *name) {
-    if (!lcm_dyn_libok()) return 0;
+    if (!lcm_libok()) return 0;
     return lcm_sym(name) != NULL;
 }
 
@@ -201,7 +201,7 @@ int lcm_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!lcm_dyn_libok()) return fallback;                                 \
+        if (!lcm_libok()) return fallback;                                     \
         *(void **)(&fn) = lcm_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "lcm_dyn: dlsym failed: %s\n", #name);             \
@@ -214,7 +214,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!lcm_dyn_libok()) return;                                          \
+        if (!lcm_libok()) return;                                              \
         *(void **)(&fn) = lcm_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "lcm_dyn: dlsym failed: %s\n", #name);             \

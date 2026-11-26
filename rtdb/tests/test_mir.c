@@ -14,7 +14,7 @@ typedef struct MIR_item *MIR_item_t;
 
 /* ---------- 动态层接口 ---------- */
 extern int mir_dyn_init(const char *);
-extern int mir_dyn_libok(void);
+extern int mir_libok(void);
 extern void mir_dyn_cleanup(void);
 extern int mir_dyn_has_symbol(const char *);
 
@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     if (mir_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libmir not installed, skipping mir_dyn test\n");
 
-    errs += CHECK(mir_dyn_libok());
+    errs += CHECK(mir_libok());
     errs += CHECK(!mir_dyn_has_symbol("MIR_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (mir_dyn_has_symbol(names[i])) found++;

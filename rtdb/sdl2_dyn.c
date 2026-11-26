@@ -87,17 +87,28 @@ static void *Y(const char *n) { return H ? dlsym(H, n) : 0; }
 static int O(void) {
   if (S)
     return S > 0;
-  const char *e = getenv("SDL2_DYN_LIB");
-  if (e && *e)
-    H = L(e);
-  if (!H)
-    H = L("libSDL2-2.0.so.0");
-  if (!H)
-    H = L("libSDL2-2.0.dylib");
-  if (!H)
-    H = L("SDL2.dll");
-  if (!H)
-    H = L("libSDL2.dylib");
+  const char *candidates[] = {
+    getenv("SDL2_DYN_LIB"),
+    "libSDL2-2.0.so.0",
+    "libSDL2-2.0.dylib",
+    "SDL2.dll",
+    "libSDL2.dylib",
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof(candidates) / sizeof(candidates[0])); i++) {
+    if (!candidates[i] || !*candidates[i])
+      continue;
+    H = L(candidates[i]);
+    if (!H)
+      continue;
+    if (!Y("SDL_Init")) {
+      dlclose(H);
+      H = 0;
+      continue;
+    }
+    fprintf(stderr, "sdl2_dyn: loaded %d %s\n", i, candidates[i]);
+    break;
+  }
   if (H && !Y("SDL_Init")) {
     dlclose(H);
     H = 0;
@@ -105,6 +116,7 @@ static int O(void) {
   S = H ? 1 : -1;
   return S > 0;
 }
+int sdl2_libok(void) { return O(); }
 void sdl2_dyn_cleanup(void) {
   if (H) {
     dlclose(H);

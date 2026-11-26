@@ -173,11 +173,11 @@ static int protobuf_c_do_load(const char *library_path) {
         if (protobuf_c_handle) { free_lib(protobuf_c_handle); protobuf_c_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "protobuf-c_dyn: loaded protobuf-c %d %s\n", res, candidates[res]);
+    fprintf(stderr, "protobuf-c_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int protobuf_c_dyn_libok(void) {
+int protobuf_c_libok(void) {
     if (protobuf_c_init_state == 0)
         protobuf_c_init_state = (protobuf_c_do_load(NULL) == 0) ? 1 : -1;
     return (protobuf_c_init_state == 1 && protobuf_c_handle != NULL) ? 1 : 0;
@@ -198,7 +198,7 @@ void protobuf_c_dyn_cleanup(void) {
 }
 
 int protobuf_c_dyn_has_symbol(const char *name) {
-    if (!protobuf_c_dyn_libok()) return 0;
+    if (!protobuf_c_libok()) return 0;
     return protobuf_c_sym(name) != NULL;
 }
 
@@ -209,7 +209,7 @@ int protobuf_c_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!protobuf_c_dyn_libok()) return fallback;                      \
+        if (!protobuf_c_libok()) return fallback;                          \
         *(void **)(&fn) = protobuf_c_sym(#name);                           \
         if (!fn) {                                                         \
             fprintf(stderr, "protobuf-c_dyn: dlsym failed: %s\n", #name);  \
@@ -223,7 +223,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!protobuf_c_dyn_libok()) return;                               \
+        if (!protobuf_c_libok()) return;                                   \
         *(void **)(&fn) = protobuf_c_sym(#name);                           \
         if (!fn) {                                                         \
             fprintf(stderr, "protobuf-c_dyn: dlsym failed: %s\n", #name);  \

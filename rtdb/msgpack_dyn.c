@@ -333,11 +333,11 @@ static int msgpack_do_load(const char *library_path) {
         if (msgpack_handle) { free_lib(msgpack_handle); msgpack_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "msgpack_dyn: loaded msgpack %d %s\n", res, candidates[res]);
+    fprintf(stderr, "msgpack_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int msgpack_dyn_libok(void) {
+int msgpack_libok(void) {
     if (msgpack_init_state == 0)
         msgpack_init_state = (msgpack_do_load(NULL) == 0) ? 1 : -1;
     return (msgpack_init_state == 1 && msgpack_handle != NULL) ? 1 : 0;
@@ -358,7 +358,7 @@ void msgpack_dyn_cleanup(void) {
 }
 
 int msgpack_dyn_has_symbol(const char *name) {
-    if (!msgpack_dyn_libok()) return 0;
+    if (!msgpack_libok()) return 0;
     return msgpack_sym(name) != NULL;
 }
 
@@ -369,7 +369,7 @@ int msgpack_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!msgpack_dyn_libok()) return fallback;                             \
+        if (!msgpack_libok()) return fallback;                                 \
         *(void **)(&fn) = msgpack_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "msgpack_dyn: dlsym failed: %s\n", #name);         \
@@ -382,7 +382,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!msgpack_dyn_libok()) return;                                      \
+        if (!msgpack_libok()) return;                                          \
         *(void **)(&fn) = msgpack_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "msgpack_dyn: dlsym failed: %s\n", #name);         \

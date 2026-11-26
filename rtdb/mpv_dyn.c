@@ -179,7 +179,8 @@ static int do_load(const char *library_path) {
 #endif
     candidates[n] = NULL;
 
-    for (int i = 0; i < n; i++) {
+    int i;
+    for (i = 0; i < n; i++) {
         mpv_handle_lib = load_lib(candidates[i]);
         if (mpv_handle_lib) break;
     }
@@ -198,8 +199,7 @@ static int do_load(const char *library_path) {
         return -1;
     }
     loaded_api_version = fn_api_version();
-    fprintf(stderr, "mpv_dyn: loaded libmpv API version %lu.%lu\n",
-            (loaded_api_version >> 16) & 0xFFFF, loaded_api_version & 0xFFFF);
+    fprintf(stderr, "mpv_dyn: loaded %d %s (libmpv API %lu.%lu)\n", i, candidates[i], (loaded_api_version >> 16) & 0xFFFF, loaded_api_version & 0xFFFF);
     return 0;
 }
 

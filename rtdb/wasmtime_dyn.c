@@ -335,14 +335,14 @@ static int wasmtime_do_load(const char *library_path) {
         wasmtime_handle = NULL;
         return -1;
     }
-    fprintf(stderr, "wasmtime_dyn: loaded libwasmtime\n");
+    fprintf(stderr, "wasmtime_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int wasmtime_dyn_libok(void) {
+int wasmtime_libok(void) {
     if (wasmtime_init_state == 0) {
         wasmtime_init_state = (wasmtime_do_load(NULL) == 0) ? 1 : -1;
     }
@@ -370,7 +370,7 @@ void wasmtime_dyn_cleanup(void) {
 }
 
 int wasmtime_dyn_has_symbol(const char *name) {
-    if (!wasmtime_dyn_libok()) return 0;
+    if (!wasmtime_libok()) return 0;
     return get_sym(wasmtime_handle, name) != NULL;
 }
 
@@ -381,7 +381,7 @@ int wasmtime_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                         \
     if (!fn) {                                                             \
-        if (!wasmtime_dyn_libok()) return fallback;                           \
+        if (!wasmtime_libok()) return fallback;                               \
         *(void **)(&fn) = get_sym(wasmtime_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmtime_dyn: dlsym failed: %s\n", #name);       \
@@ -395,7 +395,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!wasmtime_dyn_libok()) return;                                    \
+        if (!wasmtime_libok()) return;                                        \
         *(void **)(&fn) = get_sym(wasmtime_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmtime_dyn: dlsym failed: %s\n", #name);       \

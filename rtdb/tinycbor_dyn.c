@@ -371,11 +371,11 @@ static int tinycbor_do_load(const char *library_path) {
         if (tinycbor_handle) { free_lib(tinycbor_handle); tinycbor_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "tinycbor_dyn: loaded tinycbor %d %s\n", res, candidates[res]);
+    fprintf(stderr, "tinycbor_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int tinycbor_dyn_libok(void) {
+int tinycbor_libok(void) {
     if (tinycbor_init_state == 0)
         tinycbor_init_state = (tinycbor_do_load(NULL) == 0) ? 1 : -1;
     return (tinycbor_init_state == 1 && tinycbor_handle != NULL) ? 1 : 0;
@@ -396,7 +396,7 @@ void tinycbor_dyn_cleanup(void) {
 }
 
 int tinycbor_dyn_has_symbol(const char *name) {
-    if (!tinycbor_dyn_libok()) return 0;
+    if (!tinycbor_libok()) return 0;
     return tinycbor_sym(name) != NULL;
 }
 
@@ -407,7 +407,7 @@ int tinycbor_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!tinycbor_dyn_libok()) return fallback;                            \
+        if (!tinycbor_libok()) return fallback;                                \
         *(void **)(&fn) = tinycbor_sym(#name);                                 \
         if (!fn) {                                                             \
             fprintf(stderr, "tinycbor_dyn: dlsym failed: %s\n", #name);        \
@@ -420,7 +420,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!tinycbor_dyn_libok()) return;                                     \
+        if (!tinycbor_libok()) return;                                         \
         *(void **)(&fn) = tinycbor_sym(#name);                                 \
         if (!fn) {                                                             \
             fprintf(stderr, "tinycbor_dyn: dlsym failed: %s\n", #name);        \

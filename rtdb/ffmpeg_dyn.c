@@ -93,7 +93,8 @@ static int avcodec_major = 0;   /* 60=6.x, 61=7.x, 62=8.x */
 #define PATH_BUF_LEN   1024
 
 /* 按库名和版本号构造候选路径并尝试加载 */
-static lib_handle_t load_one(const char *lib_base, int version) {
+static lib_handle_t load_one(const char *lib_base, int version,
+                             int *out_idx, const char **out_path) {
     static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
     const char *candidates[MAX_CANDIDATES];
     int n = 0;
@@ -161,7 +162,11 @@ static lib_handle_t load_one(const char *lib_base, int version) {
 
     for (int i = 0; i < n; i++) {
         lib_handle_t h = load_lib(candidates[i]);
-        if (h) return h;
+        if (h) {
+            if (out_idx) *out_idx = i;
+            if (out_path) *out_path = candidates[i];
+            return h;
+        }
     }
     return NULL;
 }
@@ -172,10 +177,17 @@ static int do_load(const char *library_path) {
     /* 先探测 avcodec 主版本：尝试 61(7.x) → 60(6.x) → 62(8.x) */
     int versions[] = {61, 60, 62, 0};
     avcodec_handle = NULL;
+    int codec_idx = -1;
+    char codec_path_buf[1024];
+    const char *codec_path = NULL;
     for (int i = 0; versions[i]; i++) {
-        avcodec_handle = load_one("libavcodec", versions[i]);
+        avcodec_handle = load_one("libavcodec", versions[i], &codec_idx, &codec_path);
         if (avcodec_handle) {
             avcodec_major = versions[i];
+            if (codec_path) {
+                snprintf(codec_path_buf, sizeof codec_path_buf, "%s", codec_path);
+                codec_path = codec_path_buf;
+            }
             break;
         }
     }
@@ -184,8 +196,8 @@ static int do_load(const char *library_path) {
         return -1;
     }
 
-    avformat_handle = load_one("libavformat", avcodec_major);
-    avutil_handle   = load_one("libavutil",   avcodec_major);
+    avformat_handle = load_one("libavformat", avcodec_major, NULL, NULL);
+    avutil_handle   = load_one("libavutil",   avcodec_major, NULL, NULL);
 
     if (!avformat_handle || !avutil_handle) {
         fprintf(stderr, "ffmpeg_dyn: cannot load libavformat/libavutil (avcodec major=%d)\n",
@@ -197,7 +209,7 @@ static int do_load(const char *library_path) {
         return -1;
     }
 
-    fprintf(stderr, "ffmpeg_dyn: loaded FFmpeg libavcodec major=%d\n", avcodec_major);
+    fprintf(stderr, "ffmpeg_dyn: loaded %d %s (libavcodec major=%d)\n", codec_idx, codec_path, avcodec_major);
     return 0;
 }
 

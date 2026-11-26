@@ -37,7 +37,7 @@ struct _lcm_eventlog_event_t {
 
 /* ---------- 动态层接口 ---------- */
 extern int lcm_dyn_init(const char *);
-extern int lcm_dyn_libok(void);
+extern int lcm_libok(void);
 extern void lcm_dyn_cleanup(void);
 extern int lcm_dyn_has_symbol(const char *);
 
@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
     if (lcm_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("lcm not installed, skipping lcm_dyn test\n");
 
-    errs += CHECK(lcm_dyn_libok());
+    errs += CHECK(lcm_libok());
     errs += CHECK(!lcm_dyn_has_symbol("lcm_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (lcm_dyn_has_symbol(names[i])) found++;

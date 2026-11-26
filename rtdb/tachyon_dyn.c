@@ -172,11 +172,11 @@ static int tachyon_do_load(const char *library_path) {
         if (tachyon_handle) { free_lib(tachyon_handle); tachyon_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "tachyon_dyn: loaded tachyon %d %s\n", res, candidates[res]);
+    fprintf(stderr, "tachyon_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int tachyon_dyn_libok(void) {
+int tachyon_libok(void) {
     if (tachyon_init_state == 0)
         tachyon_init_state = (tachyon_do_load(NULL) == 0) ? 1 : -1;
     return (tachyon_init_state == 1 && tachyon_handle != NULL) ? 1 : 0;
@@ -197,7 +197,7 @@ void tachyon_dyn_cleanup(void) {
 }
 
 int tachyon_dyn_has_symbol(const char *name) {
-    if (!tachyon_dyn_libok()) return 0;
+    if (!tachyon_libok()) return 0;
     return tachyon_sym(name) != NULL;
 }
 
@@ -208,7 +208,7 @@ int tachyon_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!tachyon_dyn_libok()) return fallback;                             \
+        if (!tachyon_libok()) return fallback;                                 \
         *(void **)(&fn) = tachyon_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "tachyon_dyn: dlsym failed: %s\n", #name);         \
@@ -221,7 +221,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!tachyon_dyn_libok()) return;                                      \
+        if (!tachyon_libok()) return;                                          \
         *(void **)(&fn) = tachyon_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "tachyon_dyn: dlsym failed: %s\n", #name);         \

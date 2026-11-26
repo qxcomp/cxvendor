@@ -12,7 +12,7 @@ typedef struct jit_state jit_state_t;
 
 /* ---------- 动态层接口 ---------- */
 extern int lightning_dyn_init(const char *);
-extern int lightning_dyn_libok(void);
+extern int lightning_libok(void);
 extern void lightning_dyn_cleanup(void);
 extern int lightning_dyn_has_symbol(const char *);
 
@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
     if (lightning_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("GNU Lightning not installed, skipping lightning_dyn test\n");
 
-    errs += CHECK(lightning_dyn_libok());
+    errs += CHECK(lightning_libok());
     errs += CHECK(!lightning_dyn_has_symbol("jit_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (lightning_dyn_has_symbol(names[i])) found++;

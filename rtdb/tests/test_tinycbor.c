@@ -107,7 +107,7 @@ enum CborToJsonFlags {
 
 /* ---------- 动态层接口 ---------- */
 extern int tinycbor_dyn_init(const char *);
-extern int tinycbor_dyn_libok(void);
+extern int tinycbor_libok(void);
 extern void tinycbor_dyn_cleanup(void);
 extern int tinycbor_dyn_has_symbol(const char *);
 
@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
     if (tinycbor_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("tinycbor not installed, skipping tinycbor_dyn test\n");
 
-    errs += CHECK(tinycbor_dyn_libok());
+    errs += CHECK(tinycbor_libok());
     errs += CHECK(!tinycbor_dyn_has_symbol("cbor_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (tinycbor_dyn_has_symbol(names[i])) found++;

@@ -11,7 +11,7 @@ typedef uint32_t u_int32_t;
 
 int db_dyn_init(const char *library_path);
 void db_dyn_cleanup(void);
-int db_libok(void);
+int bdb_libok(void);
 int db_dyn_loaded_version(void);
 
 int db_create(DB **dbp, DB_ENV *dbenv, u_int32_t flags);
@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "db_dyn_init failed\n");
         return 1;
     }
-    failures += CHECK(db_libok() != 0);
+    failures += CHECK(bdb_libok() != 0);
 
     db_version(&ma, &mi, &pa);
     printf("bdb version=%d.%d.%d (loaded=%d)\n", ma, mi, pa,

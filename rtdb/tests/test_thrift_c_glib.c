@@ -14,7 +14,7 @@ typedef unsigned int  guint;
 typedef int           gboolean;
 
 extern int thrift_c_glib_dyn_init(const char *);
-extern int thrift_c_glib_dyn_libok(void);
+extern int thrift_c_glib_libok(void);
 extern void thrift_c_glib_dyn_cleanup(void);
 extern int thrift_c_glib_dyn_has_symbol(const char *);
 
@@ -41,7 +41,7 @@ int main(void) {
     if (thrift_c_glib_dyn_init(NULL) != 0)
         TEST_SKIP("libthrift_c_glib not installed, skipping thrift_c_glib_dyn test\n");
 
-    errs += CHECK(thrift_c_glib_dyn_libok());
+    errs += CHECK(thrift_c_glib_libok());
     errs += CHECK(thrift_c_glib_dyn_has_symbol("thrift_transport_get_type"));
     errs += CHECK(thrift_c_glib_dyn_has_symbol("thrift_protocol_write_i32"));
     errs += CHECK(thrift_c_glib_dyn_has_symbol("thrift_protocol_read_i32"));

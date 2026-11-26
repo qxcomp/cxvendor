@@ -92,7 +92,7 @@ typedef struct nghttp3_settings {
 
 /* ---- 封装函数声明（定义在 ../nghttp3_dyn.c） ---- */
 int nghttp3_dyn_init(const char *library_path);
-int nghttp3_dyn_libok(void);
+int nghttp3_libok(void);
 void nghttp3_dyn_cleanup(void);
 
 const nghttp3_info *nghttp3_version(int least_version);
@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
     if (nghttp3_dyn_init(argc > 1 ? argv[1] : NULL) != 0) {
         TEST_SKIP("libnghttp3 不可加载\n");
     }
-    failures += CHECK(nghttp3_dyn_libok() != 0);
+    failures += CHECK(nghttp3_libok() != 0);
 
     /* 1. version + mem_default + settings_default */
     {

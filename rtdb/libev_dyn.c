@@ -204,11 +204,11 @@ static int libev_do_load(const char *library_path) {
         if (libev_handle) { free_lib(libev_handle); libev_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "libev_dyn: loaded libev (4.33 headers)\n");
+    fprintf(stderr, "libev_dyn: loaded %d %s (4.33 headers)\n", i, candidates[i]);
     return 0;
 }
 
-int libev_dyn_libok(void) {
+int libev_libok(void) {
     if (libev_init_state == 0)
         libev_init_state = (libev_do_load(NULL) == 0) ? 1 : -1;
     return (libev_init_state == 1 && libev_handle != NULL) ? 1 : 0;
@@ -230,7 +230,7 @@ void libev_dyn_cleanup(void) {
 }
 
 int libev_dyn_has_symbol(const char *name) {
-    if (!libev_dyn_libok()) return 0;
+    if (!libev_libok()) return 0;
     return libev_sym(name) != NULL;
 }
 
@@ -241,7 +241,7 @@ int libev_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
-        if (!libev_dyn_libok()) return fallback;                          \
+        if (!libev_libok()) return fallback;                              \
         *(void **)(&fn) = libev_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libev_dyn: dlsym failed: %s\n", #name);     \
@@ -255,7 +255,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
-        if (!libev_dyn_libok()) return;                                   \
+        if (!libev_libok()) return;                                       \
         *(void **)(&fn) = libev_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libev_dyn: dlsym failed: %s\n", #name);     \

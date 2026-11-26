@@ -10,7 +10,7 @@
  *   6. 跨平台：Unix/macOS 用 dlopen/dlsym；Windows 用 LoadLibrary/GetProcAddress。
  *   7. 搜索顺序：显式路径 > GUILE_DYN_LIB > 系统搜索路径 > 默认库名
  *      > Nix > 平台默认路径。
- *   8. 线程安全：首次调用 guile_dyn_libok() 或任一封装函数时完成加载。
+ *   8. 线程安全：首次调用 guile_libok() 或任一封装函数时完成加载。
  *
  * 版本：
  *   - 只面向 Guile 3.0.x（libguile-3.0）。
@@ -166,7 +166,7 @@ static void set_version_from_path(const char *path) {
 /* ============================================================
  * 库加载
  * ============================================================ */
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_init;
     void *sym_eval;
@@ -183,8 +183,7 @@ static int try_candidate(const char *path) {
 
     guile_handle_lib = h;
     set_version_from_path(path);
-    fprintf(stderr, "guile_dyn: loaded %s (Guile %s)\n",
-            path, guile_version_str);
+    fprintf(stderr, "guile_dyn: loaded %d %s (Guile %s)\n", idx, path, guile_version_str);
     return 0;
 }
 
@@ -319,7 +318,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -334,7 +333,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int guile_dyn_libok(void) {
+int guile_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && guile_handle_lib != NULL) ? 1 : 0;
@@ -373,22 +372,22 @@ void guile_dyn_cleanup(void) {
 }
 
 int guile_dyn_major(void) {
-    if (init_state == 0) guile_dyn_libok();
+    if (init_state == 0) guile_libok();
     return guile_major;
 }
 
 int guile_dyn_minor(void) {
-    if (init_state == 0) guile_dyn_libok();
+    if (init_state == 0) guile_libok();
     return guile_minor;
 }
 
 const char *guile_dyn_version(void) {
-    if (init_state == 0) guile_dyn_libok();
+    if (init_state == 0) guile_libok();
     return guile_version_str;
 }
 
 int guile_dyn_is_initialized(void) {
-    if (!guile_dyn_libok()) return 0;
+    if (!guile_libok()) return 0;
     if (!guile_initialized_p) {
         guile_initialized_p =
             (int *)get_sym(guile_handle_lib, "scm_initialized_p");
@@ -403,7 +402,7 @@ int guile_dyn_is_initialized(void) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!guile_dyn_libok()) return fallback;                   \
+        if (!guile_libok()) return fallback;                       \
         *(void **)(&fn) = get_sym(guile_handle_lib, #name);        \
         if (!fn) {                                                 \
             fprintf(stderr, "guile_dyn: dlsym failed: %s\n",       \
@@ -418,7 +417,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!guile_dyn_libok()) return;                           \
+        if (!guile_libok()) return;                               \
         *(void **)(&fn) = get_sym(guile_handle_lib, #name);        \
         if (!fn) {                                                 \
             fprintf(stderr, "guile_dyn: dlsym failed: %s\n",       \

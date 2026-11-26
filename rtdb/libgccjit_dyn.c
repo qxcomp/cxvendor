@@ -182,10 +182,10 @@ static int gccjit_do_load(const char *library_path) {
         if (h) { gccjit_handle = h; res = i; break; }
     }
     if (res < 0) {
-        fprintf(stderr, "gccjit_dyn: cannot load gccjit (%s)\n", lib_error());
+        fprintf(stderr, "libgccjit_dyn: cannot load gccjit (%s)\n", lib_error());
         return -1;
     }
-    fprintf(stderr, "gccjit_dyn: loaded gccjit %d %s\n", res, candidates[res]);
+    fprintf(stderr, "libgccjit_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
@@ -203,10 +203,10 @@ void gccjit_dyn_cleanup(void) {
     gccjit_init_state = 0;
 }
 
-int gccjit_dyn_libok(void) { return gccjit_init_state == 1 && gccjit_handle != NULL; }
+int libgccjit_libok(void) { return gccjit_init_state == 1 && gccjit_handle != NULL; }
 
 int gccjit_dyn_has_symbol(const char *name) {
-    if (!gccjit_dyn_libok()) return 0;
+    if (!libgccjit_libok()) return 0;
     return gccjit_sym(name) != NULL;
 }
 
@@ -217,10 +217,10 @@ int gccjit_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!gccjit_dyn_libok()) return fallback;                              \
+        if (!libgccjit_libok()) return fallback;                               \
         *(void **)(&fn) = gccjit_sym(#name);                                   \
         if (!fn) {                                                             \
-            fprintf(stderr, "gccjit_dyn: dlsym failed: %s\n", #name);          \
+            fprintf(stderr, "libgccjit_dyn: dlsym failed: %s\n", #name);          \
             return fallback;                                                   \
         }                                                                      \
     }                                                                          \
@@ -230,10 +230,10 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!gccjit_dyn_libok()) return;                                       \
+        if (!libgccjit_libok()) return;                                        \
         *(void **)(&fn) = gccjit_sym(#name);                                   \
         if (!fn) {                                                             \
-            fprintf(stderr, "gccjit_dyn: dlsym failed: %s\n", #name);          \
+            fprintf(stderr, "libgccjit_dyn: dlsym failed: %s\n", #name);          \
             return;                                                            \
         }                                                                      \
     }                                                                          \

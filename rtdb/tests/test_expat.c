@@ -26,7 +26,7 @@ typedef void (*XML_CharacterDataHandler)(void *, const XML_Char *, int);
 
 /* ------------------------- 控制函数 ------------------------- */
 extern int expat_dyn_init(const char *);
-extern int expat_dyn_libok(void);
+extern int expat_libok(void);
 extern void expat_dyn_cleanup(void);
 extern int expat_dyn_has_symbol(const char *);
 
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
 
     if (expat_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("expat 不可加载\n");
-    failures += CHECK(expat_dyn_libok() != 0);
+    failures += CHECK(expat_libok() != 0);
 
     /* 1. 版本 */
     printf("expat %s\n", XML_ExpatVersion());

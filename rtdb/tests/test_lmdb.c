@@ -32,7 +32,7 @@ typedef struct {
 #define MDB_INCOMPATIBLE (-30784)
 
 extern int  lmdb_dyn_init(const char *);
-extern int  lmdb_dyn_libok(void);
+extern int  lmdb_libok(void);
 extern void lmdb_dyn_cleanup(void);
 extern int  lmdb_dyn_has_symbol(const char *);
 
@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 
     if (lmdb_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("lmdb 不可加载\n");
-    failures += CHECK(lmdb_dyn_libok() != 0);
+    failures += CHECK(lmdb_libok() != 0);
 
     /* 1. 版本 */
     ver = mdb_version(&major, &minor, &patch);

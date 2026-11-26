@@ -234,11 +234,11 @@ static int avro_do_load(const char *library_path) {
         if (avro_handle) { free_lib(avro_handle); avro_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "avro_dyn: loaded avro %d %s\n", res, candidates[res]);
+    fprintf(stderr, "avro_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int avro_dyn_libok(void) {
+int avro_libok(void) {
     if (avro_init_state == 0)
         avro_init_state = (avro_do_load(NULL) == 0) ? 1 : -1;
     return (avro_init_state == 1 && avro_handle != NULL) ? 1 : 0;
@@ -259,7 +259,7 @@ void avro_dyn_cleanup(void) {
 }
 
 int avro_dyn_has_symbol(const char *name) {
-    if (!avro_dyn_libok()) return 0;
+    if (!avro_libok()) return 0;
     return avro_sym(name) != NULL;
 }
 
@@ -270,7 +270,7 @@ int avro_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!avro_dyn_libok()) return fallback;                                \
+        if (!avro_libok()) return fallback;                                    \
         *(void **)(&fn) = avro_sym(#name);                                     \
         if (!fn) {                                                             \
             fprintf(stderr, "avro_dyn: dlsym failed: %s\n", #name);            \
@@ -283,7 +283,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!avro_dyn_libok()) return;                                         \
+        if (!avro_libok()) return;                                             \
         *(void **)(&fn) = avro_sym(#name);                                     \
         if (!fn) {                                                             \
             fprintf(stderr, "avro_dyn: dlsym failed: %s\n", #name);            \
@@ -543,7 +543,7 @@ void name(const char *fmt, ...) {                                              \
     vsnprintf(buf, sizeof buf, fmt ? fmt : "", ap);                            \
     va_end(ap);                                                                \
     if (!fn) {                                                                 \
-        if (!avro_dyn_libok()) return;                                         \
+        if (!avro_libok()) return;                                             \
         *(void **)(&fn) = avro_sym(#name);                                     \
         if (!fn) {                                                             \
             fprintf(stderr, "avro_dyn: dlsym failed: %s\n", #name);            \

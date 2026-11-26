@@ -10,9 +10,9 @@
  *   6. 跨平台：Unix/macOS 用 dlopen/dlsym；Windows 用 LoadLibrary/GetProcAddress。
  *   7. 搜索顺序：显式路径 > PYTHON_DYN_LIB > 系统搜索路径 > 默认库名
  *      > Nix / 平台默认路径 / Framework / Termux。
- *   8. 线程安全：首次调用 python_dyn_libok() 或任一封装函数时完成加载。
+ *   8. 线程安全：首次调用 python_libok() 或任一封装函数时完成加载。
  *      一次性加载本身未加锁，建议主线程在启动阶段先调用一次
- *      python_dyn_libok()/python_dyn_init()；加载完成后的并发调用安全。
+ *      python_libok()/python_dyn_init()；加载完成后的并发调用安全。
  *
  * 版本策略：
  *   - 运行时通过 Py_GetVersion() 解析主/次版本号。
@@ -311,7 +311,7 @@ static void detect_unicode_kind(void) {
         py_unicode_kind = 1;
 }
 
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_init;
     void *sym_version;
@@ -353,7 +353,7 @@ static int try_candidate(const char *path) {
     py_minor = min;
     snprintf(py_version_str, sizeof(py_version_str), "%s", ver);
     detect_unicode_kind();
-    fprintf(stderr, "python_dyn: loaded %s (Python %s)\n", path, py_version_str);
+    fprintf(stderr, "python_dyn: loaded %d %s (Python %s)\n", idx, path, py_version_str);
     return 0;
 }
 
@@ -527,7 +527,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -542,7 +542,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int python_dyn_libok(void) {
+int python_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && py_handle_lib != NULL) ? 1 : 0;
@@ -591,22 +591,22 @@ void python_dyn_cleanup(void) {
 }
 
 int python_dyn_major(void) {
-    if (init_state == 0) python_dyn_libok();
+    if (init_state == 0) python_libok();
     return py_major;
 }
 
 int python_dyn_minor(void) {
-    if (init_state == 0) python_dyn_libok();
+    if (init_state == 0) python_libok();
     return py_minor;
 }
 
 const char *python_dyn_version(void) {
-    if (init_state == 0) python_dyn_libok();
+    if (init_state == 0) python_libok();
     return py_version_str;
 }
 
 int python_dyn_unicode_kind(void) {
-    if (init_state == 0) python_dyn_libok();
+    if (init_state == 0) python_libok();
     return py_unicode_kind;
 }
 
@@ -617,7 +617,7 @@ int python_dyn_unicode_kind(void) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!python_dyn_libok()) return fallback;                  \
+        if (!python_libok()) return fallback;                      \
         *(void **)(&fn) = get_sym(py_handle_lib, #name);           \
         if (!fn) {                                                 \
             fprintf(stderr, "python_dyn: dlsym failed: %s\n",      \
@@ -632,7 +632,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!python_dyn_libok()) return;                           \
+        if (!python_libok()) return;                               \
         *(void **)(&fn) = get_sym(py_handle_lib, #name);           \
         if (!fn) {                                                 \
             fprintf(stderr, "python_dyn: dlsym failed: %s\n",      \
@@ -708,7 +708,7 @@ WRAP_RET(PyObject *, PyObject_Dir, (PyObject *o), (o), NULL)
 int PyObject_DelAttrString(PyObject *o, const char *name) {
     static int (*fn)(PyObject *, const char *) = NULL;
     if (!fn) {
-        if (!python_dyn_libok()) return -1;
+        if (!python_libok()) return -1;
         *(void **)(&fn) = get_sym(py_handle_lib, "PyObject_DelAttrString");
     }
     if (fn) return fn(o, name);
@@ -717,11 +717,11 @@ int PyObject_DelAttrString(PyObject *o, const char *name) {
 
 /* PyObject_Hash 在 2.7 返回 long，3.x 返回 Py_hash_t */
 Py_ssize_t PyObject_Hash(PyObject *o) {
-    if (!python_dyn_libok()) return -1;
+    if (!python_libok()) return -1;
     if (py_major == 2) {
         static long (*fn2)(PyObject *) = NULL;
         if (!fn2) {
-            if (!python_dyn_libok()) return -1;
+            if (!python_libok()) return -1;
             *(void **)(&fn2) = get_sym(py_handle_lib, "PyObject_Hash");
             if (!fn2) {
                 fprintf(stderr, "python_dyn: dlsym failed: PyObject_Hash\n");
@@ -732,7 +732,7 @@ Py_ssize_t PyObject_Hash(PyObject *o) {
     } else {
         static Py_ssize_t (*fn3)(PyObject *) = NULL;
         if (!fn3) {
-            if (!python_dyn_libok()) return -1;
+            if (!python_libok()) return -1;
             *(void **)(&fn3) = get_sym(py_handle_lib, "PyObject_Hash");
             if (!fn3) {
                 fprintf(stderr, "python_dyn: dlsym failed: PyObject_Hash\n");
@@ -802,7 +802,7 @@ static void *get_unicode_sym(const char *base) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!python_dyn_libok()) return fallback;                  \
+        if (!python_libok()) return fallback;                      \
         *(void **)(&fn) = get_unicode_sym(base);                   \
         if (!fn) {                                                 \
             fprintf(stderr, "python_dyn: dlsym failed: %s\n",      \
@@ -931,7 +931,7 @@ WRAP_VOID(PyErr_NormalizeException,
  * ============================================================ */
 /*
  * 库未加载时返回 PyGILState_UNLOCKED 只是安全默认值；调用方应先检查
- * python_dyn_libok()，不要在加载失败后继续执行 Python API。
+ * python_libok()，不要在加载失败后继续执行 Python API。
  */
 WRAP_RET(PyGILState_STATE, PyGILState_Ensure, (void), (),
          PyGILState_UNLOCKED)
@@ -958,7 +958,7 @@ void python_dyn_xdecref(PyObject *o) {
 /* 新建 Python 字符串对象；Python 2.7 走 PyUnicode_DecodeUTF8 */
 PyObject *python_dyn_from_utf8(const char *s) {
     if (!s) return NULL;
-    if (!python_dyn_libok()) return NULL;
+    if (!python_libok()) return NULL;
     if (py_major == 2)
         return PyUnicode_DecodeUTF8(s, (Py_ssize_t)strlen(s), "strict");
     return PyUnicode_FromString(s);
@@ -971,7 +971,7 @@ PyObject *python_dyn_from_utf8(const char *s) {
  */
 char *python_dyn_to_utf8(PyObject *obj) {
     if (!obj) return NULL;
-    if (!python_dyn_libok()) return NULL;
+    if (!python_libok()) return NULL;
 
     if (py_major == 3) {
         Py_ssize_t len = 0;
@@ -1025,7 +1025,7 @@ char *python_dyn_bytes_to_cstr(PyObject *obj) {
     char *buf = NULL;
     Py_ssize_t len = 0;
     if (!obj) return NULL;
-    if (!python_dyn_libok()) return NULL;
+    if (!python_libok()) return NULL;
     if (py_major == 3) {
         if (PyBytes_AsStringAndSize(obj, &buf, &len) != 0 || !buf)
             return NULL;

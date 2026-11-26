@@ -230,11 +230,11 @@ static int cmark_do_load(const char *library_path) {
         if (cmark_handle) { free_lib(cmark_handle); cmark_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "cmark_dyn: loaded cmark\n");
+    fprintf(stderr, "cmark_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 
-int cmark_dyn_libok(void) {
+int cmark_libok(void) {
     if (cmark_init_state == 0)
         cmark_init_state = (cmark_do_load(NULL) == 0) ? 1 : -1;
     return (cmark_init_state == 1 && cmark_handle != NULL) ? 1 : 0;
@@ -255,7 +255,7 @@ void cmark_dyn_cleanup(void) {
 }
 
 int cmark_dyn_has_symbol(const char *name) {
-    if (!cmark_dyn_libok()) return 0;
+    if (!cmark_libok()) return 0;
     return cmark_sym(name) != NULL;
 }
 
@@ -266,7 +266,7 @@ int cmark_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!cmark_dyn_libok()) return fallback;                           \
+        if (!cmark_libok()) return fallback;                               \
         *(void **)(&fn) = cmark_sym(#name);                                \
         if (!fn) {                                                         \
             fprintf(stderr, "cmark_dyn: dlsym failed: %s\n", #name);       \
@@ -280,7 +280,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!cmark_dyn_libok()) return;                                    \
+        if (!cmark_libok()) return;                                        \
         *(void **)(&fn) = cmark_sym(#name);                                \
         if (!fn) {                                                         \
             fprintf(stderr, "cmark_dyn: dlsym failed: %s\n", #name);       \

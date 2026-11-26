@@ -102,7 +102,7 @@ typedef struct msgpack_vrefbuffer {
 
 /* ---------- 动态层接口 ---------- */
 extern int msgpack_dyn_init(const char *);
-extern int msgpack_dyn_libok(void);
+extern int msgpack_libok(void);
 extern void msgpack_dyn_cleanup(void);
 extern int msgpack_dyn_has_symbol(const char *);
 
@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
     if (msgpack_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("msgpack not installed, skipping msgpack_dyn test\n");
 
-    errs += CHECK(msgpack_dyn_libok());
+    errs += CHECK(msgpack_libok());
     errs += CHECK(!msgpack_dyn_has_symbol("msgpack_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (msgpack_dyn_has_symbol(names[i])) found++;

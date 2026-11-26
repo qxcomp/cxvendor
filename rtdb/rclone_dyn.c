@@ -266,7 +266,7 @@ static int do_load(const char *library_path) {
             rclone_handle_lib = NULL;
             continue;
         }
-        fprintf(stderr, "rclone_dyn: loaded %s\n", candidates[i]);
+        fprintf(stderr, "rclone_dyn: loaded %d %s\n", i, candidates[i]);
         return 0;
     }
 

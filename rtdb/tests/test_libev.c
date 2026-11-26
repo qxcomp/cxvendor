@@ -51,7 +51,7 @@ typedef void (*ev_loop_callback)(struct ev_loop *loop);
 
 /* ------------------------- 封装函数声明 ------------------------- */
 int libev_dyn_init(const char *library_path);
-int libev_dyn_libok(void);
+int libev_libok(void);
 void libev_dyn_cleanup(void);
 
 int ev_version_major(void);
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
 
     if (libev_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libev 不可加载\n");
-    failures += CHECK(libev_dyn_libok() != 0);
+    failures += CHECK(libev_libok() != 0);
 
     printf("libev %d.%d, backends=0x%08x/0x%08x\n",
            ev_version_major(), ev_version_minor(),

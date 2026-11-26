@@ -221,14 +221,14 @@ static int wasmedge_do_load(const char *library_path) {
         wasmedge_handle = NULL;
         return -1;
     }
-    fprintf(stderr, "wasmedge_dyn: loaded libwasmedge\n");
+    fprintf(stderr, "wasmedge_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int wasmedge_dyn_libok(void) {
+int wasmedge_libok(void) {
     if (wasmedge_init_state == 0) {
         wasmedge_init_state = (wasmedge_do_load(NULL) == 0) ? 1 : -1;
     }
@@ -256,7 +256,7 @@ void wasmedge_dyn_cleanup(void) {
 }
 
 int wasmedge_dyn_has_symbol(const char *name) {
-    if (!wasmedge_dyn_libok()) return 0;
+    if (!wasmedge_libok()) return 0;
     return get_sym(wasmedge_handle, name) != NULL;
 }
 
@@ -267,7 +267,7 @@ int wasmedge_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                         \
     if (!fn) {                                                             \
-        if (!wasmedge_dyn_libok()) return fallback;                           \
+        if (!wasmedge_libok()) return fallback;                               \
         *(void **)(&fn) = get_sym(wasmedge_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmedge_dyn: dlsym failed: %s\n", #name);       \
@@ -281,7 +281,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!wasmedge_dyn_libok()) return;                                    \
+        if (!wasmedge_libok()) return;                                        \
         *(void **)(&fn) = get_sym(wasmedge_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmedge_dyn: dlsym failed: %s\n", #name);       \

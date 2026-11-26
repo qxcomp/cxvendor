@@ -211,7 +211,8 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     /* 逐个尝试加载 */
-    for (int i = 0; i < n; i++) {
+    int i;
+    for (i = 0; i < n; i++) {
         sqlite_handle = load_lib(candidates[i]);
         if (sqlite_handle) break;
     }
@@ -227,6 +228,7 @@ static int do_load(const char *library_path) {
         sqlite_handle = NULL;
         return -1;
     }
+    fprintf(stderr, "sqlite3_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 

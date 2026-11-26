@@ -247,11 +247,11 @@ static int mosquitto_do_load(const char *library_path) {
         if (mosquitto_handle) { free_lib(mosquitto_handle); mosquitto_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "mosquitto_dyn: loaded mosquitto %d %s\n", res, candidates[res]);
+    fprintf(stderr, "mosquitto_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int mosquitto_dyn_libok(void) {
+int mosquitto_libok(void) {
     if (mosquitto_init_state == 0)
         mosquitto_init_state = (mosquitto_do_load(NULL) == 0) ? 1 : -1;
     return (mosquitto_init_state == 1 && mosquitto_handle != NULL) ? 1 : 0;
@@ -272,7 +272,7 @@ void mosquitto_dyn_cleanup(void) {
 }
 
 int mosquitto_dyn_has_symbol(const char *name) {
-    if (!mosquitto_dyn_libok()) return 0;
+    if (!mosquitto_libok()) return 0;
     return mosquitto_sym(name) != NULL;
 }
 
@@ -283,7 +283,7 @@ int mosquitto_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!mosquitto_dyn_libok()) return fallback;                           \
+        if (!mosquitto_libok()) return fallback;                               \
         *(void **)(&fn) = mosquitto_sym(#name);                                \
         if (!fn) {                                                             \
             fprintf(stderr, "mosquitto_dyn: dlsym failed: %s\n", #name);       \
@@ -296,7 +296,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!mosquitto_dyn_libok()) return;                                    \
+        if (!mosquitto_libok()) return;                                        \
         *(void **)(&fn) = mosquitto_sym(#name);                                \
         if (!fn) {                                                             \
             fprintf(stderr, "mosquitto_dyn: dlsym failed: %s\n", #name);       \

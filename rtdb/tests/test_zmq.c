@@ -36,7 +36,7 @@ typedef void (zmq_timer_fn)(int timer_id, void *arg);
 
 /* ---------- 动态层接口 ---------- */
 extern int zmq_dyn_init(const char *);
-extern int zmq_dyn_libok(void);
+extern int zmq_libok(void);
 extern void zmq_dyn_cleanup(void);
 extern int zmq_dyn_has_symbol(const char *);
 
@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     if (zmq_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("zmq not installed, skipping zmq_dyn test\n");
 
-    errs += CHECK(zmq_dyn_libok());
+    errs += CHECK(zmq_libok());
     errs += CHECK(!zmq_dyn_has_symbol("zmq_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (zmq_dyn_has_symbol(names[i])) found++;

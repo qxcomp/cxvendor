@@ -24,7 +24,7 @@ typedef struct {
 } md_test_parser_t;
 
 extern int  md4c_dyn_init(const char *);
-extern int  md4c_dyn_libok(void);
+extern int  md4c_libok(void);
 extern void md4c_dyn_cleanup(void);
 extern int  md4c_dyn_has_symbol(const char *);
 
@@ -66,7 +66,7 @@ int main(void) {
     if (md4c_dyn_init(NULL) != 0)
         TEST_SKIP("libmd4c not installed, skipping md4c_dyn test\n");
 
-    errs += CHECK(md4c_dyn_libok());
+    errs += CHECK(md4c_libok());
     errs += CHECK(md4c_dyn_has_symbol("md_parse"));
     errs += CHECK(md4c_dyn_has_symbol("md_html"));
     errs += CHECK(!md4c_dyn_has_symbol("md_no_such_symbol_xyz"));

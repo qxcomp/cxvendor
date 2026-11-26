@@ -41,7 +41,7 @@
 #include <unistd.h>
 
 /* 前置声明（mxml_dyn_abi 会用到） */
-int mxml_dyn_libok(void);
+int mxml_libok(void);
 
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
@@ -140,7 +140,7 @@ static int mxml_detect_abi(void) {
 }
 
 int mxml_dyn_abi(void) {
-    if (!mxml_dyn_libok()) return 0;
+    if (!mxml_libok()) return 0;
     return mxml_detect_abi();
 }
 
@@ -266,11 +266,11 @@ static int mxml_do_load(const char *library_path) {
     }
     mxml_abi = 0;
     mxml_detect_abi();
-    fprintf(stderr, "mxml_dyn: loaded mxml (abi=%d)\n", mxml_abi);
+    fprintf(stderr, "mxml_dyn: loaded %d %s (abi=%d)\n", i, candidates[i], mxml_abi);
     return 0;
 }
 
-int mxml_dyn_libok(void) {
+int mxml_libok(void) {
     if (mxml_init_state == 0)
         mxml_init_state = (mxml_do_load(NULL) == 0) ? 1 : -1;
     return (mxml_init_state == 1 && mxml_handle != NULL) ? 1 : 0;
@@ -291,7 +291,7 @@ void mxml_dyn_cleanup(void) {
 }
 
 int mxml_dyn_has_symbol(const char *name) {
-    if (!mxml_dyn_libok()) return 0;
+    if (!mxml_libok()) return 0;
     return mxml_sym(name) != NULL;
 }
 
@@ -302,7 +302,7 @@ int mxml_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!mxml_dyn_libok()) return fallback;                            \
+        if (!mxml_libok()) return fallback;                                \
         *(void **)(&fn) = mxml_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "mxml_dyn: dlsym failed: %s\n", #name);        \
@@ -316,7 +316,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!mxml_dyn_libok()) return;                                     \
+        if (!mxml_libok()) return;                                         \
         *(void **)(&fn) = mxml_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "mxml_dyn: dlsym failed: %s\n", #name);        \
@@ -391,7 +391,7 @@ WRAP_RET(mxml_node_t *, mxmlWalkPrev, (mxml_node_t *node, mxml_node_t *top, mxml
  * ============================================================ */
 void mxmlAdd(mxml_node_t *parent, mxml_add_t add, mxml_node_t *child, mxml_node_t *node) {
     static void (*fn)(mxml_node_t *, mxml_add_t, mxml_node_t *, mxml_node_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return;
+    if (!fn) { if (!mxml_libok()) return;
         *(void **)(&fn) = mxml_sym("mxmlAdd");
         if (!fn) { fprintf(stderr, "mxml_dyn: dlsym failed: mxmlAdd\n"); return; } }
     if (mxml_dyn_abi() == 3)
@@ -402,7 +402,7 @@ void mxmlAdd(mxml_node_t *parent, mxml_add_t add, mxml_node_t *child, mxml_node_
 
 size_t mxmlElementGetAttrCount(mxml_node_t *node) {
     static size_t (*fn)(mxml_node_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return 0;
+    if (!fn) { if (!mxml_libok()) return 0;
         *(void **)(&fn) = mxml_sym("mxmlElementGetAttrCount");
         if (!fn) return 0; }
     if (mxml_dyn_abi() == 3) return (size_t)((int (*)(mxml_node_t *))fn)(node);
@@ -411,7 +411,7 @@ size_t mxmlElementGetAttrCount(mxml_node_t *node) {
 
 const char *mxmlElementGetAttrByIndex(mxml_node_t *node, size_t idx, const char **name) {
     static const char *(*fn)(mxml_node_t *, size_t, const char **) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlElementGetAttrByIndex");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -421,7 +421,7 @@ const char *mxmlElementGetAttrByIndex(mxml_node_t *node, size_t idx, const char 
 
 long mxmlGetInteger(mxml_node_t *node) {
     static long (*fn)(mxml_node_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return 0;
+    if (!fn) { if (!mxml_libok()) return 0;
         *(void **)(&fn) = mxml_sym("mxmlGetInteger");
         if (!fn) return 0; }
     if (mxml_dyn_abi() == 3) return (long)((int (*)(mxml_node_t *))fn)(node);
@@ -430,7 +430,7 @@ long mxmlGetInteger(mxml_node_t *node) {
 
 size_t mxmlGetRefCount(mxml_node_t *node) {
     static size_t (*fn)(mxml_node_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return 0;
+    if (!fn) { if (!mxml_libok()) return 0;
         *(void **)(&fn) = mxml_sym("mxmlGetRefCount");
         if (!fn) return 0; }
     if (mxml_dyn_abi() == 3) return (size_t)((int (*)(mxml_node_t *))fn)(node);
@@ -439,7 +439,7 @@ size_t mxmlGetRefCount(mxml_node_t *node) {
 
 mxml_type_t mxmlGetType(mxml_node_t *node) {
     static mxml_type_t (*fn)(mxml_node_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return MXML_TYPE_IGNORE;
+    if (!fn) { if (!mxml_libok()) return MXML_TYPE_IGNORE;
         *(void **)(&fn) = mxml_sym("mxmlGetType");
         if (!fn) return MXML_TYPE_IGNORE; }
     if (mxml_dyn_abi() == 3)
@@ -449,7 +449,7 @@ mxml_type_t mxmlGetType(mxml_node_t *node) {
 
 const char *mxmlGetText(mxml_node_t *node, bool *whitespace) {
     static const char *(*fn)(mxml_node_t *, bool *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlGetText");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3) {
@@ -463,7 +463,7 @@ const char *mxmlGetText(mxml_node_t *node, bool *whitespace) {
 
 size_t mxmlIndexGetCount(mxml_index_t *ind) {
     static size_t (*fn)(mxml_index_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return 0;
+    if (!fn) { if (!mxml_libok()) return 0;
         *(void **)(&fn) = mxml_sym("mxmlIndexGetCount");
         if (!fn) return 0; }
     if (mxml_dyn_abi() == 3) return (size_t)((int (*)(mxml_index_t *))fn)(ind);
@@ -472,7 +472,7 @@ size_t mxmlIndexGetCount(mxml_index_t *ind) {
 
 mxml_node_t *mxmlLoadFd(mxml_node_t *top, mxml_options_t *options, int fd) {
     static mxml_node_t *(*fn)(mxml_node_t *, mxml_options_t *, int) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlLoadFd");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -483,7 +483,7 @@ mxml_node_t *mxmlLoadFd(mxml_node_t *top, mxml_options_t *options, int fd) {
 
 mxml_node_t *mxmlLoadFile(mxml_node_t *top, mxml_options_t *options, FILE *fp) {
     static mxml_node_t *(*fn)(mxml_node_t *, mxml_options_t *, FILE *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlLoadFile");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -494,7 +494,7 @@ mxml_node_t *mxmlLoadFile(mxml_node_t *top, mxml_options_t *options, FILE *fp) {
 
 mxml_node_t *mxmlLoadString(mxml_node_t *top, mxml_options_t *options, const char *s) {
     static mxml_node_t *(*fn)(mxml_node_t *, mxml_options_t *, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlLoadString");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -505,7 +505,7 @@ mxml_node_t *mxmlLoadString(mxml_node_t *top, mxml_options_t *options, const cha
 
 mxml_node_t *mxmlNewCustom(mxml_node_t *parent, void *data, mxml_custfree_cb_t free_cb, void *free_cbdata) {
     static mxml_node_t *(*fn)(mxml_node_t *, void *, mxml_custfree_cb_t, void *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlNewCustom");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3) {
@@ -517,7 +517,7 @@ mxml_node_t *mxmlNewCustom(mxml_node_t *parent, void *data, mxml_custfree_cb_t f
 
 mxml_node_t *mxmlNewInteger(mxml_node_t *parent, long integer) {
     static mxml_node_t *(*fn)(mxml_node_t *, long) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlNewInteger");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -527,7 +527,7 @@ mxml_node_t *mxmlNewInteger(mxml_node_t *parent, long integer) {
 
 mxml_node_t *mxmlNewText(mxml_node_t *parent, bool whitespace, const char *string) {
     static mxml_node_t *(*fn)(mxml_node_t *, bool, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlNewText");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3)
@@ -537,7 +537,7 @@ mxml_node_t *mxmlNewText(mxml_node_t *parent, bool whitespace, const char *strin
 
 char *mxmlSaveAllocString(mxml_node_t *node, mxml_options_t *options) {
     static char *(*fn)(mxml_node_t *, mxml_options_t *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return NULL;
+    if (!fn) { if (!mxml_libok()) return NULL;
         *(void **)(&fn) = mxml_sym("mxmlSaveAllocString");
         if (!fn) return NULL; }
     if (mxml_dyn_abi() == 3) {
@@ -549,7 +549,7 @@ char *mxmlSaveAllocString(mxml_node_t *node, mxml_options_t *options) {
 
 bool mxmlSaveFd(mxml_node_t *node, mxml_options_t *options, int fd) {
     static bool (*fn)(mxml_node_t *, mxml_options_t *, int) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSaveFd");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3) {
@@ -561,7 +561,7 @@ bool mxmlSaveFd(mxml_node_t *node, mxml_options_t *options, int fd) {
 
 bool mxmlSaveFile(mxml_node_t *node, mxml_options_t *options, FILE *fp) {
     static bool (*fn)(mxml_node_t *, mxml_options_t *, FILE *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSaveFile");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3) {
@@ -573,7 +573,7 @@ bool mxmlSaveFile(mxml_node_t *node, mxml_options_t *options, FILE *fp) {
 
 size_t mxmlSaveString(mxml_node_t *node, mxml_options_t *options, char *buffer, size_t bufsize) {
     static size_t (*fn)(mxml_node_t *, mxml_options_t *, char *, size_t) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return 0;
+    if (!fn) { if (!mxml_libok()) return 0;
         *(void **)(&fn) = mxml_sym("mxmlSaveString");
         if (!fn) return 0; }
     if (mxml_dyn_abi() == 3) {
@@ -585,7 +585,7 @@ size_t mxmlSaveString(mxml_node_t *node, mxml_options_t *options, char *buffer, 
 
 bool mxmlSetCDATA(mxml_node_t *node, const char *data) {
     static bool (*fn)(mxml_node_t *, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetCDATA");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -595,7 +595,7 @@ bool mxmlSetCDATA(mxml_node_t *node, const char *data) {
 
 bool mxmlSetCustom(mxml_node_t *node, void *data, mxml_custfree_cb_t free_cb, void *cbdata) {
     static bool (*fn)(mxml_node_t *, void *, mxml_custfree_cb_t, void *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetCustom");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3) {
@@ -607,7 +607,7 @@ bool mxmlSetCustom(mxml_node_t *node, void *data, mxml_custfree_cb_t free_cb, vo
 
 bool mxmlSetElement(mxml_node_t *node, const char *name) {
     static bool (*fn)(mxml_node_t *, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetElement");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -617,7 +617,7 @@ bool mxmlSetElement(mxml_node_t *node, const char *name) {
 
 bool mxmlSetInteger(mxml_node_t *node, long integer) {
     static bool (*fn)(mxml_node_t *, long) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetInteger");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -627,7 +627,7 @@ bool mxmlSetInteger(mxml_node_t *node, long integer) {
 
 bool mxmlSetOpaque(mxml_node_t *node, const char *opaque) {
     static bool (*fn)(mxml_node_t *, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetOpaque");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -637,7 +637,7 @@ bool mxmlSetOpaque(mxml_node_t *node, const char *opaque) {
 
 bool mxmlSetReal(mxml_node_t *node, double real) {
     static bool (*fn)(mxml_node_t *, double) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetReal");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -647,7 +647,7 @@ bool mxmlSetReal(mxml_node_t *node, double real) {
 
 bool mxmlSetText(mxml_node_t *node, bool whitespace, const char *string) {
     static bool (*fn)(mxml_node_t *, bool, const char *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetText");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3)
@@ -657,7 +657,7 @@ bool mxmlSetText(mxml_node_t *node, bool whitespace, const char *string) {
 
 bool mxmlSetUserData(mxml_node_t *node, void *data) {
     static bool (*fn)(mxml_node_t *, void *) = NULL;
-    if (!fn) { if (!mxml_dyn_libok()) return false;
+    if (!fn) { if (!mxml_libok()) return false;
         *(void **)(&fn) = mxml_sym("mxmlSetUserData");
         if (!fn) return false; }
     if (mxml_dyn_abi() == 3) {
@@ -811,7 +811,7 @@ void mxml_error(const char *format, ...) {
     va_list ap;
     static void (*fn)(const char *) = NULL;
     if (!fn) {
-        if (!mxml_dyn_libok()) return;
+        if (!mxml_libok()) return;
         *(void **)(&fn) = mxml_sym("mxml_error");
         if (!fn) return;
     }

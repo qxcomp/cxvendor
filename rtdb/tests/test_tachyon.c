@@ -56,7 +56,7 @@ typedef struct {
 
 /* ---------- 动态层接口 ---------- */
 extern int tachyon_dyn_init(const char *);
-extern int tachyon_dyn_libok(void);
+extern int tachyon_libok(void);
 extern void tachyon_dyn_cleanup(void);
 extern int tachyon_dyn_has_symbol(const char *);
 
@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
     if (tachyon_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("tachyon not installed, skipping tachyon_dyn test\n");
 
-    errs += CHECK(tachyon_dyn_libok());
+    errs += CHECK(tachyon_libok());
     errs += CHECK(!tachyon_dyn_has_symbol("tachyon_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (tachyon_dyn_has_symbol(names[i])) found++;

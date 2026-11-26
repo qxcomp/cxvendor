@@ -8,7 +8,7 @@
 
 /* ------------------------- 控制函数 ------------------------- */
 extern int tinyxml2_dyn_init(const char *);
-extern int tinyxml2_dyn_libok(void);
+extern int tinyxml2_libok(void);
 extern void tinyxml2_dyn_cleanup(void);
 extern int tinyxml2_dyn_has_symbol(const char *);
 extern int tinyxml2_dyn_selftest(void);
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
 
     if (tinyxml2_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("tinyxml2 不可加载\n");
-    failures += CHECK(tinyxml2_dyn_libok() != 0);
+    failures += CHECK(tinyxml2_libok() != 0);
 
     /* 1. 内建自检 */
     failures += CHECK(tinyxml2_dyn_selftest() == 0);

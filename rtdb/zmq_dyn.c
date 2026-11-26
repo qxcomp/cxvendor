@@ -187,11 +187,11 @@ static int zmq_do_load(const char *library_path) {
         if (zmq_handle) { free_lib(zmq_handle); zmq_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "zmq_dyn: loaded zmq %d %s\n", res, candidates[res]);
+    fprintf(stderr, "zmq_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int zmq_dyn_libok(void) {
+int zmq_libok(void) {
     if (zmq_init_state == 0)
         zmq_init_state = (zmq_do_load(NULL) == 0) ? 1 : -1;
     return (zmq_init_state == 1 && zmq_handle != NULL) ? 1 : 0;
@@ -212,7 +212,7 @@ void zmq_dyn_cleanup(void) {
 }
 
 int zmq_dyn_has_symbol(const char *name) {
-    if (!zmq_dyn_libok()) return 0;
+    if (!zmq_libok()) return 0;
     return zmq_sym(name) != NULL;
 }
 
@@ -223,7 +223,7 @@ int zmq_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!zmq_dyn_libok()) return fallback;                                 \
+        if (!zmq_libok()) return fallback;                                     \
         *(void **)(&fn) = zmq_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "zmq_dyn: dlsym failed: %s\n", #name);             \
@@ -236,7 +236,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!zmq_dyn_libok()) return;                                          \
+        if (!zmq_libok()) return;                                              \
         *(void **)(&fn) = zmq_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "zmq_dyn: dlsym failed: %s\n", #name);             \

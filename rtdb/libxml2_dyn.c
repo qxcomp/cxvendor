@@ -640,12 +640,12 @@ static int libxml2_do_load(const char *library_path) {
         if (libxml2_handle) { free_lib(libxml2_handle); libxml2_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "libxml2_dyn: loaded libxml2 (2.15 headers)\n");
+    fprintf(stderr, "libxml2_dyn: loaded %d %s (2.15 headers)\n", i, candidates[i]);
     libxml2_dyn_sync_globals();
     return 0;
 }
 
-int libxml2_dyn_libok(void) {
+int libxml2_libok(void) {
     if (libxml2_init_state == 0)
         libxml2_init_state = (libxml2_do_load(NULL) == 0) ? 1 : -1;
     return (libxml2_init_state == 1 && libxml2_handle != NULL) ? 1 : 0;
@@ -667,7 +667,7 @@ void libxml2_dyn_cleanup(void) {
 }
 
 int libxml2_dyn_has_symbol(const char *name) {
-    if (!libxml2_dyn_libok()) return 0;
+    if (!libxml2_libok()) return 0;
     return libxml2_sym(name) != NULL;
 }
 
@@ -727,7 +727,7 @@ void libxml2_dyn_sync_globals(void) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
-        if (!libxml2_dyn_libok()) return fallback;                          \
+        if (!libxml2_libok()) return fallback;                              \
         *(void **)(&fn) = libxml2_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libxml2_dyn: dlsym failed: %s\n", #name);     \
@@ -741,7 +741,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
-        if (!libxml2_dyn_libok()) return;                                   \
+        if (!libxml2_libok()) return;                                       \
         *(void **)(&fn) = libxml2_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libxml2_dyn: dlsym failed: %s\n", #name);     \
@@ -782,7 +782,7 @@ int name fdecl {                                                          \
     char *b;                                                              \
     int r;                                                                \
     if (!fn) {                                                            \
-        if (!libxml2_dyn_libok()) return -1;                              \
+        if (!libxml2_libok()) return -1;                                  \
         *(void **)(&fn) = libxml2_sym(#name);                             \
         if (!fn) {                                                        \
             fprintf(stderr, "libxml2_dyn: dlsym failed: %s\n", #name);    \
@@ -804,7 +804,7 @@ void name fdecl {                                                         \
     va_list ap;                                                           \
     char *b;                                                              \
     if (!fn) {                                                            \
-        if (!libxml2_dyn_libok()) return;                                 \
+        if (!libxml2_libok()) return;                                     \
         *(void **)(&fn) = libxml2_sym(#name);                             \
         if (!fn) {                                                        \
             fprintf(stderr, "libxml2_dyn: dlsym failed: %s\n", #name);    \
@@ -2230,7 +2230,7 @@ int xmlStrPrintf(xmlChar *buf, int len, const char *msg, ...) {
     va_list ap;
     int r;
     if (!fn) {
-        if (!libxml2_dyn_libok()) return -1;
+        if (!libxml2_libok()) return -1;
         *(void **)(&fn) = libxml2_sym("xmlStrVPrintf");
         if (!fn) {
             fprintf(stderr, "libxml2_dyn: dlsym failed: xmlStrVPrintf\n");

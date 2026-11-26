@@ -27,7 +27,7 @@ typedef ptrdiff_t lua_Integer;
 
 /* ---------- 动态层接口 ---------- */
 extern int luajit_dyn_init(const char *);
-extern int luajit_dyn_libok(void);
+extern int luajit_libok(void);
 extern void luajit_dyn_cleanup(void);
 extern int luajit_dyn_has_symbol(const char *);
 
@@ -98,7 +98,7 @@ int main(int argc, char **argv) {
     if (luajit_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("LuaJIT not installed, skipping luajit_dyn test\n");
 
-    errs += CHECK(luajit_dyn_libok());
+    errs += CHECK(luajit_libok());
     errs += CHECK(!luajit_dyn_has_symbol("lua_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (luajit_dyn_has_symbol(names[i])) found++;

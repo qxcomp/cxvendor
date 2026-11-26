@@ -17,7 +17,7 @@ typedef unsigned long long int gdbm_count_t;
 #define GDBM_DUMP_FMT_ASCII 1
 
 extern int  gdbm_dyn_init(const char *);
-extern int  gdbm_dyn_libok(void);
+extern int  gdbm_libok(void);
 extern void gdbm_dyn_cleanup(void);
 extern int  gdbm_dyn_has_symbol(const char *);
 
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
 
     if (gdbm_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("gdbm 不可加载\n");
-    failures += CHECK(gdbm_dyn_libok() != 0);
+    failures += CHECK(gdbm_libok() != 0);
 
     /* 1. 版本与数据符号 */
     printf("gdbm version: %s (%d.%d.%d)\n", gdbm_version,

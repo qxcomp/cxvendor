@@ -114,17 +114,28 @@ static void *G(const char *n) {
 static int O(void) {
   if (S)
     return S > 0;
-  const char *e = getenv("SDL3_DYN_LIB");
-  if (e && *e)
-    H = L(e);
-  if (!H)
-    H = L("libSDL3.so.0");
-  if (!H)
-    H = L("libSDL3.dylib");
-  if (!H)
-    H = L("SDL3.dll");
-  if (!H)
-    H = L("libSDL3.0.dylib");
+  const char *candidates[] = {
+    getenv("SDL3_DYN_LIB"),
+    "libSDL3.so.0",
+    "libSDL3.dylib",
+    "SDL3.dll",
+    "libSDL3.0.dylib",
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof(candidates) / sizeof(candidates[0])); i++) {
+    if (!candidates[i] || !*candidates[i])
+      continue;
+    H = L(candidates[i]);
+    if (!H)
+      continue;
+    if (!Y("SDL_Init")) {
+      dlclose(H);
+      H = 0;
+      continue;
+    }
+    fprintf(stderr, "sdl3_dyn: loaded %d %s\n", i, candidates[i]);
+    break;
+  }
   if (H && !Y("SDL_Init")) {
     dlclose(H);
     H = 0;
@@ -132,6 +143,7 @@ static int O(void) {
   S = H ? 1 : -1;
   return S > 0;
 }
+int sdl3_libok(void) { return O(); }
 void sdl3_dyn_cleanup(void) {
   if (H) {
     dlclose(H);

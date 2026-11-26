@@ -47,7 +47,7 @@ typedef wasmtime_extern_t wasmtime_val_t;
 
 /* ---- 函数声明（定义在 ../wasmtime_dyn.c） ---- */
 int wasmtime_dyn_init(const char *library_path);
-int wasmtime_dyn_libok(void);
+int wasmtime_libok(void);
 void wasmtime_dyn_cleanup(void);
 
 wasmtime_error_t *wasmtime_wat2wasm(const char *wat, size_t wat_size,
@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
     if (wasmtime_dyn_init(argc > 1 ? argv[1] : NULL) != 0) {
         TEST_SKIP("libwasmtime 不可加载\n");
     }
-    failures += CHECK(wasmtime_dyn_libok() != 0);
+    failures += CHECK(wasmtime_libok() != 0);
 
     /* 1. wat2wasm：加法模块 */
     const char *wat =

@@ -56,7 +56,7 @@ typedef void (*nng_http_handler_func)(nng_http *, void *, nng_aio *);
 
 /* ---------- 动态层接口 ---------- */
 extern int nng_dyn_init(const char *);
-extern int nng_dyn_libok(void);
+extern int nng_libok(void);
 extern void nng_dyn_cleanup(void);
 extern int nng_dyn_has_symbol(const char *);
 
@@ -291,7 +291,7 @@ int main(int argc, char **argv) {
     if (nng_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("nng not installed, skipping nng_dyn test\n");
 
-    errs += CHECK(nng_dyn_libok());
+    errs += CHECK(nng_libok());
     /* 该构建要求显式初始化，否则 aio 内部除零（上游行为，非封装问题） */
     errs += CHECK(nng_init(NULL) == 0);
     errs += CHECK(!nng_dyn_has_symbol("nng_no_such_symbol_xyz"));

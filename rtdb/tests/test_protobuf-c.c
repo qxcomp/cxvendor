@@ -7,7 +7,7 @@
 #include <string.h>
 
 extern int protobuf_c_dyn_init(const char *);
-extern int protobuf_c_dyn_libok(void);
+extern int protobuf_c_libok(void);
 extern void protobuf_c_dyn_cleanup(void);
 extern int protobuf_c_dyn_has_symbol(const char *);
 
@@ -26,7 +26,7 @@ int main(void) {
     if (protobuf_c_dyn_init(NULL) != 0)
         TEST_SKIP("libprotobuf-c not installed, skipping protobuf-c_dyn test\n");
 
-    errs += CHECK(protobuf_c_dyn_libok());
+    errs += CHECK(protobuf_c_libok());
     errs += CHECK(protobuf_c_dyn_has_symbol("protobuf_c_version"));
     errs += CHECK(protobuf_c_dyn_has_symbol("protobuf_c_message_unpack"));
     errs += CHECK(protobuf_c_dyn_has_symbol("protobuf_c_message_pack"));

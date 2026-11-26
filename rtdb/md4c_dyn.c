@@ -280,7 +280,8 @@ static lib_handle_t md4c_load_one(const char *library_path,
                                   const char *so_soname,
                                   const char *so_plain,
                                   const char *probe_symbol,
-                                  const char *env_dir_name) {
+                                  const char *env_dir_name,
+                                  int *out_idx, const char **out_path) {
     static char bufs[96][1024];
     const char *candidates[96];
     int n = 0, i;
@@ -354,7 +355,11 @@ static lib_handle_t md4c_load_one(const char *library_path,
 
     for (i = 0; i < n; i++) {
         h = load_lib(candidates[i]);
-        if (h && get_sym(h, probe_symbol)) break;
+        if (h && get_sym(h, probe_symbol)) {
+            if (out_idx) *out_idx = i;
+            if (out_path) *out_path = candidates[i];
+            break;
+        }
         if (h) { free_lib(h); h = NULL; }
     }
     return h;
@@ -363,12 +368,19 @@ static lib_handle_t md4c_load_one(const char *library_path,
 static int md4c_do_load(const char *library_path) {
     if (md4c_handle_core && md4c_handle_html) return 0;
 
+    int core_idx = -1;
+    char core_path_buf[1024];
+    const char *core_path = NULL;
     if (!md4c_handle_core)
         md4c_handle_core = md4c_load_one(library_path, "libmd4c.so.0", "libmd4c.so",
-                                         "md_parse", "MD4C_DYN_LIB");
+                                         "md_parse", "MD4C_DYN_LIB", &core_idx, &core_path);
+    if (core_path) {
+        snprintf(core_path_buf, sizeof core_path_buf, "%s", core_path);
+        core_path = core_path_buf;
+    }
     if (!md4c_handle_html)
         md4c_handle_html = md4c_load_one(library_path, "libmd4c-html.so.0", "libmd4c-html.so",
-                                         "md_html", "MD4C_DYN_LIB");
+                                         "md_html", "MD4C_DYN_LIB", NULL, NULL);
 
     if (!md4c_handle_core) {
         fprintf(stderr, "md4c_dyn: cannot load md4c core (%s)\n", lib_error());
@@ -376,12 +388,11 @@ static int md4c_do_load(const char *library_path) {
     }
     if (!md4c_handle_html)
         fprintf(stderr, "md4c_dyn: warning: md4c-html not loaded, md_html unavailable (%s)\n", lib_error());
-    fprintf(stderr, "md4c_dyn: loaded md4c (core=%s html=%s)\n",
-            md4c_handle_core ? "yes" : "no", md4c_handle_html ? "yes" : "no");
+    fprintf(stderr, "md4c_dyn: loaded %d %s (core=%s html=%s)\n", core_idx, core_path, md4c_handle_core ? "yes" : "no", md4c_handle_html ? "yes" : "no");
     return 0;
 }
 
-int md4c_dyn_libok(void) {
+int md4c_libok(void) {
     if (md4c_init_state == 0)
         md4c_init_state = (md4c_do_load(NULL) == 0) ? 1 : -1;
     return (md4c_init_state == 1 && md4c_handle_core != NULL) ? 1 : 0;
@@ -403,7 +414,7 @@ void md4c_dyn_cleanup(void) {
 }
 
 int md4c_dyn_has_symbol(const char *name) {
-    if (!md4c_dyn_libok()) return 0;
+    if (!md4c_libok()) return 0;
     return md4c_sym(name) != NULL;
 }
 
@@ -414,7 +425,7 @@ int md4c_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!md4c_dyn_libok()) return fallback;                            \
+        if (!md4c_libok()) return fallback;                                \
         *(void **)(&fn) = md4c_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "md4c_dyn: dlsym failed: %s\n", #name);        \

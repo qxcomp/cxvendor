@@ -42,7 +42,7 @@ typedef enum
 
 /* ---------- 动态层接口 ---------- */
 extern int fastipc_dyn_init(const char *);
-extern int fastipc_dyn_libok(void);
+extern int fastipc_libok(void);
 extern void fastipc_dyn_cleanup(void);
 extern int fastipc_dyn_has_symbol(const char *);
 
@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
     if (fastipc_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("fastipc not installed, skipping fastipc_dyn test\n");
 
-    errs += CHECK(fastipc_dyn_libok());
+    errs += CHECK(fastipc_libok());
     errs += CHECK(!fastipc_dyn_has_symbol("fipc_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (fastipc_dyn_has_symbol(names[i])) found++;

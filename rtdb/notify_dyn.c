@@ -193,7 +193,7 @@ static int push_bare_names(const char **candidates,
 /* ============================================================
  * 加载与锚点符号验证
  * ============================================================ */
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_init;
     void *sym_get_type;
@@ -214,8 +214,7 @@ static int try_candidate(const char *path) {
     notify_api_level = sym_act_token ? 8 : 7;
     snprintf(notify_version_str, sizeof(notify_version_str),
              "API level %d (0.%d.x)", notify_api_level, notify_api_level);
-    fprintf(stderr, "notify_dyn: loaded %s (libnotify %s)\n",
-            path, notify_version_str);
+    fprintf(stderr, "notify_dyn: loaded %d %s (libnotify %s)\n", idx, path, notify_version_str);
     return 0;
 }
 
@@ -305,7 +304,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -320,7 +319,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int notify_dyn_libok(void) {
+int notify_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && notify_handle_lib != NULL) ? 1 : 0;
@@ -345,7 +344,7 @@ void notify_dyn_cleanup(void) {
 }
 
 const char *notify_dyn_version(void) {
-    if (init_state == 0) notify_dyn_libok();
+    if (init_state == 0) notify_libok();
     return notify_version_str;
 }
 
@@ -354,7 +353,7 @@ int notify_dyn_major(void) {
 }
 
 int notify_dyn_minor(void) {
-    if (init_state == 0) notify_dyn_libok();
+    if (init_state == 0) notify_libok();
     return notify_api_level;   /* 7 或 8 */
 }
 
@@ -363,13 +362,13 @@ int notify_dyn_micro(void) {
 }
 
 int notify_dyn_api_level(void) {
-    if (init_state == 0) notify_dyn_libok();
+    if (init_state == 0) notify_libok();
     return notify_api_level;
 }
 
 int notify_dyn_has_symbol(const char *name) {
     if (!name || !*name) return 0;
-    if (!notify_dyn_libok()) return 0;
+    if (!notify_libok()) return 0;
     return get_sym(notify_handle_lib, name) != NULL;
 }
 
@@ -380,7 +379,7 @@ int notify_dyn_has_symbol(const char *name) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!notify_dyn_libok()) return fallback;                  \
+        if (!notify_libok()) return fallback;                      \
         *(void **)(&fn) = get_sym(notify_handle_lib, #name);       \
         if (!fn) {                                                 \
             fprintf(stderr, "notify_dyn: dlsym failed: %s\n",      \
@@ -395,7 +394,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!notify_dyn_libok()) return;                           \
+        if (!notify_libok()) return;                               \
         *(void **)(&fn) = get_sym(notify_handle_lib, #name);       \
         if (!fn) {                                                 \
             fprintf(stderr, "notify_dyn: dlsym failed: %s\n",      \

@@ -191,12 +191,12 @@ static int gdbm_do_load(const char *library_path) {
         if (gdbm_handle) { free_lib(gdbm_handle); gdbm_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "gdbm_dyn: loaded gdbm (1.26 headers)\n");
+    fprintf(stderr, "gdbm_dyn: loaded %d %s (1.26 headers)\n", i, candidates[i]);
     gdbm_dyn_sync_globals();
     return 0;
 }
 
-int gdbm_dyn_libok(void) {
+int gdbm_libok(void) {
     if (gdbm_init_state == 0)
         gdbm_init_state = (gdbm_do_load(NULL) == 0) ? 1 : -1;
     return (gdbm_init_state == 1 && gdbm_handle != NULL) ? 1 : 0;
@@ -218,7 +218,7 @@ void gdbm_dyn_cleanup(void) {
 }
 
 int gdbm_dyn_has_symbol(const char *name) {
-    if (!gdbm_dyn_libok()) return 0;
+    if (!gdbm_libok()) return 0;
     return gdbm_sym(name) != NULL;
 }
 
@@ -244,7 +244,7 @@ void gdbm_dyn_sync_globals(void) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!gdbm_dyn_libok()) return fallback;                            \
+        if (!gdbm_libok()) return fallback;                                \
         *(void **)(&fn) = gdbm_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "gdbm_dyn: dlsym failed: %s\n", #name);        \
@@ -258,7 +258,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!gdbm_dyn_libok()) return;                                     \
+        if (!gdbm_libok()) return;                                         \
         *(void **)(&fn) = gdbm_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "gdbm_dyn: dlsym failed: %s\n", #name);        \

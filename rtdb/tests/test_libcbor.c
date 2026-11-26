@@ -53,7 +53,7 @@ struct cbor_callbacks {
 };
 
 extern int libcbor_dyn_init(const char *);
-extern int libcbor_dyn_libok(void);
+extern int libcbor_libok(void);
 extern void libcbor_dyn_cleanup(void);
 extern int libcbor_dyn_has_symbol(const char *);
 
@@ -124,7 +124,7 @@ int main(void) {
     if (libcbor_dyn_init(NULL) != 0)
         TEST_SKIP("libcbor not installed, skipping libcbor_dyn test\n");
 
-    errs += CHECK(libcbor_dyn_libok());
+    errs += CHECK(libcbor_libok());
     errs += CHECK(!libcbor_dyn_has_symbol("cbor_no_such_symbol_xyz"));
 
     /* 181 个公开声明逐一探测 dlsym */

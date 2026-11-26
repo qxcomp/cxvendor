@@ -312,14 +312,14 @@ static int nghttp3_do_load(const char *library_path) {
        nghttp3_handle = NULL;
        return -1;
    }
-   fprintf(stderr, "nghttp3_dyn: loaded libnghttp3 (1.18.0 headers; runtime via nghttp3_version)\n");
+   fprintf(stderr, "nghttp3_dyn: loaded %d %s (1.18.0 headers; runtime via nghttp3_version)\n", i, candidates[i]);
    return 0;
 }
 
 /* ============================================================
 * 控制函数
 * ============================================================ */
-int nghttp3_dyn_libok(void) {
+int nghttp3_libok(void) {
    if (nghttp3_init_state == 0) {
        nghttp3_init_state = (nghttp3_do_load(NULL) == 0) ? 1 : -1;
    }
@@ -347,7 +347,7 @@ void nghttp3_dyn_cleanup(void) {
 }
 
 int nghttp3_dyn_has_symbol(const char *name) {
-   if (!nghttp3_dyn_libok()) return 0;
+   if (!nghttp3_libok()) return 0;
    return get_sym(nghttp3_handle, name) != NULL;
 }
 
@@ -358,7 +358,7 @@ int nghttp3_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
    static ret (*fn) params = NULL;                                         \
    if (!fn) {                                                             \
-       if (!nghttp3_dyn_libok()) return fallback;                           \
+       if (!nghttp3_libok()) return fallback;                               \
        *(void **)(&fn) = get_sym(nghttp3_handle, #name);                    \
        if (!fn) {                                                         \
            fprintf(stderr, "nghttp3_dyn: dlsym failed: %s\n", #name);       \
@@ -372,7 +372,7 @@ ret name params {                                                         \
 void name params {                                                        \
    static void (*fn) params = NULL;                                        \
    if (!fn) {                                                             \
-       if (!nghttp3_dyn_libok()) return;                                    \
+       if (!nghttp3_libok()) return;                                        \
        *(void **)(&fn) = get_sym(nghttp3_handle, #name);                    \
        if (!fn) {                                                         \
            fprintf(stderr, "nghttp3_dyn: dlsym failed: %s\n", #name);       \

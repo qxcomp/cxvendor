@@ -267,11 +267,11 @@ static int libcbor_do_load(const char *library_path) {
         if (libcbor_handle) { free_lib(libcbor_handle); libcbor_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "libcbor_dyn: loaded libcbor %d %s\n", res, candidates[res]);
+    fprintf(stderr, "libcbor_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int libcbor_dyn_libok(void) {
+int libcbor_libok(void) {
     if (libcbor_init_state == 0)
         libcbor_init_state = (libcbor_do_load(NULL) == 0) ? 1 : -1;
     return (libcbor_init_state == 1 && libcbor_handle != NULL) ? 1 : 0;
@@ -292,7 +292,7 @@ void libcbor_dyn_cleanup(void) {
 }
 
 int libcbor_dyn_has_symbol(const char *name) {
-    if (!libcbor_dyn_libok()) return 0;
+    if (!libcbor_libok()) return 0;
     return libcbor_sym(name) != NULL;
 }
 
@@ -303,7 +303,7 @@ int libcbor_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!libcbor_dyn_libok()) return fallback;                             \
+        if (!libcbor_libok()) return fallback;                                 \
         *(void **)(&fn) = libcbor_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "libcbor_dyn: dlsym failed: %s\n", #name);         \
@@ -316,7 +316,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!libcbor_dyn_libok()) return;                                      \
+        if (!libcbor_libok()) return;                                          \
         *(void **)(&fn) = libcbor_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "libcbor_dyn: dlsym failed: %s\n", #name);         \

@@ -192,11 +192,11 @@ static int lmdb_do_load(const char *library_path) {
         if (lmdb_handle) { free_lib(lmdb_handle); lmdb_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "lmdb_dyn: loaded lmdb\n");
+    fprintf(stderr, "lmdb_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 
-int lmdb_dyn_libok(void) {
+int lmdb_libok(void) {
     if (lmdb_init_state == 0)
         lmdb_init_state = (lmdb_do_load(NULL) == 0) ? 1 : -1;
     return (lmdb_init_state == 1 && lmdb_handle != NULL) ? 1 : 0;
@@ -218,7 +218,7 @@ void lmdb_dyn_cleanup(void) {
 }
 
 int lmdb_dyn_has_symbol(const char *name) {
-    if (!lmdb_dyn_libok()) return 0;
+    if (!lmdb_libok()) return 0;
     return lmdb_sym(name) != NULL;
 }
 
@@ -229,7 +229,7 @@ int lmdb_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!lmdb_dyn_libok()) return fallback;                            \
+        if (!lmdb_libok()) return fallback;                                \
         *(void **)(&fn) = lmdb_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "lmdb_dyn: dlsym failed: %s\n", #name);        \
@@ -243,7 +243,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!lmdb_dyn_libok()) return;                                     \
+        if (!lmdb_libok()) return;                                         \
         *(void **)(&fn) = lmdb_sym(#name);                                 \
         if (!fn) {                                                         \
             fprintf(stderr, "lmdb_dyn: dlsym failed: %s\n", #name);        \

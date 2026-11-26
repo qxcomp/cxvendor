@@ -305,6 +305,8 @@ static int libevent_do_load(const char *library_path) {
     static char bufs[96][1024];
     const char *candidates[96];
     int n = 0, i;
+    const char *loaded_candidate = NULL;
+    int loaded_index = -1;
     if (libevent_handle) return 0;
     if (library_path && *library_path) {
         snprintf(bufs[n], sizeof bufs[0], "%s", library_path);
@@ -374,7 +376,7 @@ static int libevent_do_load(const char *library_path) {
 #endif
     for (i = 0; i < n; i++) {
         libevent_handle = load_lib(candidates[i]);
-        if (libevent_handle) break;
+        if (libevent_handle) { loaded_candidate = candidates[i]; loaded_index = i; break; }
     }
     if (!libevent_handle) {
         /* 拆分版：core + extra 两个句柄 */
@@ -382,7 +384,10 @@ static int libevent_do_load(const char *library_path) {
             "/usr/local/lib/libevent_core-2.1.so.7", "/usr/lib/libevent_core-2.1.so.7" };
         static const char *extra_c[] = { "libevent_extra-2.1.so.7", "libevent_extra.so",
             "/usr/local/lib/libevent_extra-2.1.so.7", "/usr/lib/libevent_extra-2.1.so.7" };
-        for (i = 0; i < 4 && !libevent_handle; i++) libevent_handle = load_lib(core_c[i]);
+        for (i = 0; i < 4 && !libevent_handle; i++) {
+            libevent_handle = load_lib(core_c[i]);
+            if (libevent_handle) { loaded_candidate = core_c[i]; loaded_index = i; }
+        }
         for (i = 0; i < 4 && !libevent_extra_handle; i++) libevent_extra_handle = load_lib(extra_c[i]);
     }
     if (libevent_handle && !libevent_extra_handle &&
@@ -401,11 +406,11 @@ static int libevent_do_load(const char *library_path) {
     }
     if (!libevent_sym("evhttp_new"))
         fprintf(stderr, "libevent_dyn: warning: evhttp_new not exported\n");
-    fprintf(stderr, "libevent_dyn: loaded libevent (2.1 headers)\n");
+    fprintf(stderr, "libevent_dyn: loaded %d %s (2.1 headers)\n", loaded_index, loaded_candidate);
     return 0;
 }
 
-int libevent_dyn_libok(void) {
+int libevent_libok(void) {
     if (libevent_init_state == 0)
         libevent_init_state = (libevent_do_load(NULL) == 0) ? 1 : -1;
     return (libevent_init_state == 1 && libevent_handle != NULL) ? 1 : 0;
@@ -427,7 +432,7 @@ void libevent_dyn_cleanup(void) {
 }
 
 int libevent_dyn_has_symbol(const char *name) {
-    if (!libevent_dyn_libok()) return 0;
+    if (!libevent_libok()) return 0;
     return libevent_sym(name) != NULL;
 }
 
@@ -438,7 +443,7 @@ int libevent_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
-        if (!libevent_dyn_libok()) return fallback;                          \
+        if (!libevent_libok()) return fallback;                              \
         *(void **)(&fn) = libevent_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libevent_dyn: dlsym failed: %s\n", #name);     \
@@ -452,7 +457,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
-        if (!libevent_dyn_libok()) return;                                   \
+        if (!libevent_libok()) return;                                       \
         *(void **)(&fn) = libevent_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libevent_dyn: dlsym failed: %s\n", #name);     \

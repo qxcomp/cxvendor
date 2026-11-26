@@ -160,7 +160,7 @@ static int lightning_do_load(const char *library_path) {
         fprintf(stderr, "lightning_dyn: cannot load lightning (%s)\n", lib_error());
         return -1;
     }
-    fprintf(stderr, "lightning_dyn: loaded lightning %d %s\n", res, candidates[res]);
+    fprintf(stderr, "lightning_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
@@ -178,10 +178,10 @@ void lightning_dyn_cleanup(void) {
     lightning_init_state = 0;
 }
 
-int lightning_dyn_libok(void) { return lightning_init_state == 1 && lightning_handle != NULL; }
+int lightning_libok(void) { return lightning_init_state == 1 && lightning_handle != NULL; }
 
 int lightning_dyn_has_symbol(const char *name) {
-    if (!lightning_dyn_libok()) return 0;
+    if (!lightning_libok()) return 0;
     return lightning_sym(name) != NULL;
 }
 
@@ -190,7 +190,7 @@ int lightning_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!lightning_dyn_libok()) return fallback;                           \
+        if (!lightning_libok()) return fallback;                               \
         *(void **)(&fn) = lightning_sym(#name);                                \
         if (!fn) {                                                             \
             fprintf(stderr, "lightning_dyn: dlsym failed: %s\n", #name);       \
@@ -203,7 +203,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!lightning_dyn_libok()) return;                                    \
+        if (!lightning_libok()) return;                                        \
         *(void **)(&fn) = lightning_sym(#name);                                \
         if (!fn) {                                                             \
             fprintf(stderr, "lightning_dyn: dlsym failed: %s\n", #name);       \

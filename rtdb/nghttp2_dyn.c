@@ -329,14 +329,14 @@ static int nghttp2_do_load(const char *library_path) {
        nghttp2_handle = NULL;
        return -1;
    }
-   fprintf(stderr, "nghttp2_dyn: loaded libnghttp2 (1.70.0 headers; runtime via nghttp2_version)\n");
+   fprintf(stderr, "nghttp2_dyn: loaded %d %s (1.70.0 headers; runtime via nghttp2_version)\n", i, candidates[i]);
    return 0;
 }
 
 /* ============================================================
 * 控制函数
 * ============================================================ */
-int nghttp2_dyn_libok(void) {
+int nghttp2_libok(void) {
    if (nghttp2_init_state == 0) {
        nghttp2_init_state = (nghttp2_do_load(NULL) == 0) ? 1 : -1;
    }
@@ -364,7 +364,7 @@ void nghttp2_dyn_cleanup(void) {
 }
 
 int nghttp2_dyn_has_symbol(const char *name) {
-   if (!nghttp2_dyn_libok()) return 0;
+   if (!nghttp2_libok()) return 0;
    return get_sym(nghttp2_handle, name) != NULL;
 }
 
@@ -375,7 +375,7 @@ int nghttp2_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
    static ret (*fn) params = NULL;                                         \
    if (!fn) {                                                             \
-       if (!nghttp2_dyn_libok()) return fallback;                           \
+       if (!nghttp2_libok()) return fallback;                               \
        *(void **)(&fn) = get_sym(nghttp2_handle, #name);                    \
        if (!fn) {                                                         \
            fprintf(stderr, "nghttp2_dyn: dlsym failed: %s\n", #name);       \
@@ -389,7 +389,7 @@ ret name params {                                                         \
 void name params {                                                        \
    static void (*fn) params = NULL;                                        \
    if (!fn) {                                                             \
-       if (!nghttp2_dyn_libok()) return;                                    \
+       if (!nghttp2_libok()) return;                                        \
        *(void **)(&fn) = get_sym(nghttp2_handle, #name);                    \
        if (!fn) {                                                         \
            fprintf(stderr, "nghttp2_dyn: dlsym failed: %s\n", #name);       \

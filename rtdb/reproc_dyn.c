@@ -270,7 +270,8 @@ static int do_load(const char *library_path) {
 #endif
     candidates[n] = NULL;
 
-    for (int i = 0; i < n; i++) {
+    int i;
+    for (i = 0; i < n; i++) {
         reproc_lib = load_lib(candidates[i]);
         if (reproc_lib) break;
     }
@@ -284,6 +285,7 @@ static int do_load(const char *library_path) {
         reproc_lib = NULL;
         return -1;
     }
+    fprintf(stderr, "reproc_dyn: loaded %d %s\n", i, candidates[i]);
     return 0;
 }
 

@@ -39,7 +39,7 @@ typedef struct WasmEdge_FunctionTypeContext WasmEdge_FunctionTypeContext;
 
 /* ---- 函数声明（定义在 ../wasmedge_dyn.c） ---- */
 int wasmedge_dyn_init(const char *library_path);
-int wasmedge_dyn_libok(void);
+int wasmedge_libok(void);
 void wasmedge_dyn_cleanup(void);
 
 WasmEdge_VMContext *WasmEdge_VMCreate(const WasmEdge_ConfigureContext *conf,
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     if (wasmedge_dyn_init(argc > 1 ? argv[1] : NULL) != 0) {
         TEST_SKIP("libwasmedge 不可加载\n");
     }
-    failures += CHECK(wasmedge_dyn_libok() != 0);
+    failures += CHECK(wasmedge_libok() != 0);
     WasmEdge_LogSetErrorLevel();
 
     WasmEdge_ConfigureContext *conf = WasmEdge_ConfigureCreate();

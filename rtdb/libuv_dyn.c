@@ -381,11 +381,11 @@ static int libuv_do_load(const char *library_path) {
         if (libuv_handle) { free_lib(libuv_handle); libuv_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "libuv_dyn: loaded libuv (1.53 headers)\n");
+    fprintf(stderr, "libuv_dyn: loaded %d %s (1.53 headers)\n", i, candidates[i]);
     return 0;
 }
 
-int libuv_dyn_libok(void) {
+int libuv_libok(void) {
     if (libuv_init_state == 0)
         libuv_init_state = (libuv_do_load(NULL) == 0) ? 1 : -1;
     return (libuv_init_state == 1 && libuv_handle != NULL) ? 1 : 0;
@@ -407,7 +407,7 @@ void libuv_dyn_cleanup(void) {
 }
 
 int libuv_dyn_has_symbol(const char *name) {
-    if (!libuv_dyn_libok()) return 0;
+    if (!libuv_libok()) return 0;
     return libuv_sym(name) != NULL;
 }
 
@@ -418,7 +418,7 @@ int libuv_dyn_has_symbol(const char *name) {
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
-        if (!libuv_dyn_libok()) return fallback;                          \
+        if (!libuv_libok()) return fallback;                              \
         *(void **)(&fn) = libuv_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libuv_dyn: dlsym failed: %s\n", #name);     \
@@ -432,7 +432,7 @@ ret name params {                                                         \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
-        if (!libuv_dyn_libok()) return;                                   \
+        if (!libuv_libok()) return;                                       \
         *(void **)(&fn) = libuv_sym(#name);                               \
         if (!fn) {                                                        \
             fprintf(stderr, "libuv_dyn: dlsym failed: %s\n", #name);     \
@@ -772,7 +772,7 @@ int uv_loop_configure(uv_loop_t *loop, uv_loop_option option, ...) {
     static int (*fn)(uv_loop_t *, uv_loop_option, ...) = NULL;
     va_list ap;
     int arg = 0;
-    if (!libuv_dyn_libok()) return -1;
+    if (!libuv_libok()) return -1;
     if (!fn) {
         *(void **)(&fn) = libuv_sym("uv_loop_configure");
         if (!fn) {

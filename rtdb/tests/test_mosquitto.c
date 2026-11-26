@@ -36,7 +36,7 @@ struct mosquitto_message {
 
 /* ---------- 动态层接口 ---------- */
 extern int mosquitto_dyn_init(const char *);
-extern int mosquitto_dyn_libok(void);
+extern int mosquitto_libok(void);
 extern void mosquitto_dyn_cleanup(void);
 extern int mosquitto_dyn_has_symbol(const char *);
 
@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
     if (mosquitto_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("mosquitto not installed, skipping mosquitto_dyn test\n");
 
-    errs += CHECK(mosquitto_dyn_libok());
+    errs += CHECK(mosquitto_libok());
     errs += CHECK(!mosquitto_dyn_has_symbol("mosquitto_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (mosquitto_dyn_has_symbol(names[i])) found++;

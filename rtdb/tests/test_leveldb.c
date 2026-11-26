@@ -19,7 +19,7 @@ typedef struct leveldb_writebatch_t leveldb_writebatch_t;
 typedef struct leveldb_writeoptions_t leveldb_writeoptions_t;
 
 extern int  leveldb_dyn_init(const char *);
-extern int  leveldb_dyn_libok(void);
+extern int  leveldb_libok(void);
 extern void leveldb_dyn_cleanup(void);
 extern int  leveldb_dyn_has_symbol(const char *);
 
@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
 
     if (leveldb_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("leveldb 不可加载\n");
-    failures += CHECK(leveldb_dyn_libok() != 0);
+    failures += CHECK(leveldb_libok() != 0);
 
     printf("leveldb %d.%d\n", leveldb_major_version(), leveldb_minor_version());
     failures += CHECK(leveldb_major_version() > 0);

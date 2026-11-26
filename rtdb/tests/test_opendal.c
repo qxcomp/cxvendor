@@ -17,7 +17,7 @@ struct opendal_result_operator_new {
 };
 
 extern int  opendal_dyn_init(const char *);
-extern int  opendal_dyn_libok(void);
+extern int  opendal_libok(void);
 extern void opendal_dyn_cleanup(void);
 extern int  opendal_dyn_has_symbol(const char *);
 
@@ -37,7 +37,7 @@ int main(void) {
     if (opendal_dyn_init(NULL) != 0)
         TEST_SKIP("libopendal_c not installed, skipping opendal_dyn test\n");
 
-    errs += CHECK(opendal_dyn_libok());
+    errs += CHECK(opendal_libok());
 
     errs += CHECK(opendal_dyn_has_symbol("opendal_operator_new"));
     errs += CHECK(opendal_dyn_has_symbol("opendal_operator_read"));

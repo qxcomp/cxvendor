@@ -11,7 +11,7 @@
  *   7. 库搜索顺序：显式路径 > DB_DYN_LIB 环境变量 > 系统搜索路径
  *      > 版本化默认库名（v6→v5→v4）> Nix 路径 > 平台默认路径。
  *   8. 加载后用 db_version() 识别实际版本，存入 loaded_major_version。
- *   9. 线程安全：首次调用 db_libok() 或任一封装函数时完成加载。
+ *   9. 线程安全：首次调用 bdb_libok() 或任一封装函数时完成加载。
  *
  * 版本说明：
  *   - v4/v5/v6 的共享库 SONAME 带版本号：libdb-4.8.so / libdb-5.3.so / libdb-6.2.so
@@ -213,12 +213,13 @@ static int do_load(const char *library_path) {
 #endif
     candidates[n] = NULL;
 
-    for (int i = 0; i < n; i++) {
+    int i;
+    for (i = 0; i < n; i++) {
         db_handle = load_lib(candidates[i]);
         if (db_handle) break;
     }
     if (!db_handle) {
-        fprintf(stderr, "db_dyn: cannot load libdb (%s)\n", lib_error());
+        fprintf(stderr, "bdb_dyn: cannot load libdb (%s)\n", lib_error());
         return -1;
     }
 
@@ -226,7 +227,7 @@ static int do_load(const char *library_path) {
     void (*fn_version)(int*, int*, int*) = NULL;
     *(void **)(&fn_version) = get_sym(db_handle, "db_version");
     if (!fn_version) {
-        fprintf(stderr, "db_dyn: loaded library does not export db_version\n");
+        fprintf(stderr, "bdb_dyn: loaded library does not export db_version\n");
         free_lib(db_handle);
         db_handle = NULL;
         return -1;
@@ -234,14 +235,14 @@ static int do_load(const char *library_path) {
     int major = 0, minor = 0, patch = 0;
     fn_version(&major, &minor, &patch);
     loaded_major_version = major;
-    fprintf(stderr, "db_dyn: loaded Berkeley DB %d.%d.%d\n", major, minor, patch);
+    fprintf(stderr, "bdb_dyn: loaded %d %s (Berkeley DB %d.%d.%d)\n", i, candidates[i], major, minor, patch);
     return 0;
 }
 
 /* ============================================================
  * 一次性初始化
  * ============================================================ */
-int db_libok(void) {
+int bdb_libok(void) {
     if (init_state == 0) {
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     }
@@ -277,7 +278,7 @@ int db_dyn_loaded_version(void) {
  * ============================================================ */
 #define RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
-        if (!db_libok()) return fallback;                      \
+        if (!bdb_libok()) return fallback;                      \
         *(void **)(&(var)) = get_sym(db_handle, name);         \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
@@ -300,7 +301,7 @@ int db_create(DB **dbp, DB_ENV *dbenv, u_int32_t flags) {
 char *db_strerror(int error) {
     static char *(*fn)(int) = NULL;
     if (!fn) {
-        if (!db_libok()) return "db not initialized";
+        if (!bdb_libok()) return "db not initialized";
         *(void **)(&fn) = get_sym(db_handle, "db_strerror");
         if (!fn) return "db_strerror not resolved";
     }
@@ -310,7 +311,7 @@ char *db_strerror(int error) {
 char *db_version(int *majorp, int *minorp, int *patchp) {
     static char *(*fn)(int*, int*, int*) = NULL;
     if (!fn) {
-        if (!db_libok()) {
+        if (!bdb_libok()) {
             if (majorp) *majorp = 0;
             if (minorp) *minorp = 0;
             if (patchp) *patchp = 0;

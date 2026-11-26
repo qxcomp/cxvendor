@@ -11,7 +11,7 @@
  *   6. 跨平台：Unix/macOS 用 dlopen/dlsym；Windows 用 LoadLibrary/GetProcAddress。
  *   7. 搜索顺序：显式路径 > VTE_DYN_LIB > 系统搜索路径 > 默认库名
  *      > Nix > 平台默认路径。
- *   8. 线程安全：首次调用 vte_dyn_libok() 或任一封装函数时完成加载。
+ *   8. 线程安全：首次调用 vte_libok() 或任一封装函数时完成加载。
  *
  * 版本：
  *   - 同时支持 GTK3 的 libvte-2.91.so.0 和 GTK4 的
@@ -281,7 +281,7 @@ static int push_vte_bare_names(const char **candidates,
 /* ============================================================
  * 加载与版本探测
  * ============================================================ */
-static int try_candidate(const char *path) {
+static int try_candidate(const char *path, int idx) {
     lib_handle_t h;
     void *sym_new;
     void *sym_type;
@@ -324,8 +324,7 @@ static int try_candidate(const char *path) {
     snprintf(vte_version_str, sizeof(vte_version_str), "%d.%d.%d",
              vte_lib_major, vte_lib_minor, vte_lib_micro);
 
-    fprintf(stderr, "vte_dyn: loaded %s (VTE %s, GTK%d)\n",
-            path, vte_version_str, vte_gtk_major);
+    fprintf(stderr, "vte_dyn: loaded %d %s (VTE %s, GTK%d)\n", idx, path, vte_version_str, vte_gtk_major);
     return 0;
 }
 
@@ -436,7 +435,7 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i]) == 0)
+        if (try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
@@ -452,7 +451,7 @@ static int do_load(const char *library_path) {
 /* ============================================================
  * 控制函数
  * ============================================================ */
-int vte_dyn_libok(void) {
+int vte_libok(void) {
     if (init_state == 0)
         init_state = (do_load(NULL) == 0) ? 1 : -1;
     return (init_state == 1 && vte_handle_lib != NULL) ? 1 : 0;
@@ -495,33 +494,33 @@ void vte_dyn_cleanup(void) {
 }
 
 const char *vte_dyn_version(void) {
-    if (init_state == 0) vte_dyn_libok();
+    if (init_state == 0) vte_libok();
     return vte_version_str;
 }
 
 int vte_dyn_major(void) {
-    if (init_state == 0) vte_dyn_libok();
+    if (init_state == 0) vte_libok();
     return vte_lib_major;
 }
 
 int vte_dyn_minor(void) {
-    if (init_state == 0) vte_dyn_libok();
+    if (init_state == 0) vte_libok();
     return vte_lib_minor;
 }
 
 int vte_dyn_micro(void) {
-    if (init_state == 0) vte_dyn_libok();
+    if (init_state == 0) vte_libok();
     return vte_lib_micro;
 }
 
 int vte_dyn_gtk_major(void) {
-    if (init_state == 0) vte_dyn_libok();
+    if (init_state == 0) vte_libok();
     return vte_gtk_major;
 }
 
 int vte_dyn_has_symbol(const char *name) {
     if (!name || !*name) return 0;
-    if (!vte_dyn_libok()) return 0;
+    if (!vte_libok()) return 0;
     return get_sym(vte_handle_lib, name) != NULL;
 }
 
@@ -532,7 +531,7 @@ int vte_dyn_has_symbol(const char *name) {
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
-        if (!vte_dyn_libok()) return fallback;                     \
+        if (!vte_libok()) return fallback;                         \
         *(void **)(&fn) = get_sym(vte_handle_lib, #name);          \
         if (!fn) {                                                 \
             fprintf(stderr, "vte_dyn: dlsym failed: %s\n",         \
@@ -547,7 +546,7 @@ ret name params {                                                  \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
-        if (!vte_dyn_libok()) return;                              \
+        if (!vte_libok()) return;                                  \
         *(void **)(&fn) = get_sym(vte_handle_lib, #name);          \
         if (!fn) {                                                 \
             fprintf(stderr, "vte_dyn: dlsym failed: %s\n",         \

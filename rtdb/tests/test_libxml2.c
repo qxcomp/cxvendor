@@ -17,7 +17,7 @@ typedef void *xmlErrorPtr;
 
 /* ------------------------- 控制函数 ------------------------- */
 extern int libxml2_dyn_init(const char *);
-extern int libxml2_dyn_libok(void);
+extern int libxml2_libok(void);
 extern void libxml2_dyn_cleanup(void);
 extern int libxml2_dyn_has_symbol(const char *);
 extern void libxml2_dyn_sync_globals(void);
@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
 
     if (libxml2_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libxml2 不可加载\n");
-    failures += CHECK(libxml2_dyn_libok() != 0);
+    failures += CHECK(libxml2_libok() != 0);
 
     /* 1. 数据符号 */
     printf("libxml2 %s\n", xmlParserVersion ? xmlParserVersion : "(null)");

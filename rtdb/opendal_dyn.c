@@ -434,11 +434,11 @@ static int opendal_do_load(const char *library_path) {
         if (opendal_handle) { free_lib(opendal_handle); opendal_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "opendal_dyn: loaded opendal %d %s\n", res, candidates[res]);
+    fprintf(stderr, "opendal_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int opendal_dyn_libok(void) {
+int opendal_libok(void) {
     if (opendal_init_state == 0)
         opendal_init_state = (opendal_do_load(NULL) == 0) ? 1 : -1;
     return (opendal_init_state == 1 && opendal_handle != NULL) ? 1 : 0;
@@ -459,7 +459,7 @@ void opendal_dyn_cleanup(void) {
 }
 
 int opendal_dyn_has_symbol(const char *name) {
-    if (!opendal_dyn_libok()) return 0;
+    if (!opendal_libok()) return 0;
     return opendal_sym(name) != NULL;
 }
 
@@ -470,7 +470,7 @@ int opendal_dyn_has_symbol(const char *name) {
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
-        if (!opendal_dyn_libok()) return fallback;                         \
+        if (!opendal_libok()) return fallback;                             \
         *(void **)(&fn) = opendal_sym(#name);                              \
         if (!fn) {                                                         \
             fprintf(stderr, "opendal_dyn: dlsym failed: %s\n", #name);     \
@@ -484,7 +484,7 @@ ret name params {                                                          \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
-        if (!opendal_dyn_libok()) return;                                  \
+        if (!opendal_libok()) return;                                      \
         *(void **)(&fn) = opendal_sym(#name);                              \
         if (!fn) {                                                         \
             fprintf(stderr, "opendal_dyn: dlsym failed: %s\n", #name);     \

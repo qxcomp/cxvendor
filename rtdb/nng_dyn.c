@@ -349,11 +349,11 @@ static int nng_do_load(const char *library_path) {
         if (nng_handle) { free_lib(nng_handle); nng_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "nng_dyn: loaded nng %d %s\n", res, candidates[res]);
+    fprintf(stderr, "nng_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int nng_dyn_libok(void) {
+int nng_libok(void) {
     if (nng_init_state == 0)
         nng_init_state = (nng_do_load(NULL) == 0) ? 1 : -1;
     return (nng_init_state == 1 && nng_handle != NULL) ? 1 : 0;
@@ -374,7 +374,7 @@ void nng_dyn_cleanup(void) {
 }
 
 int nng_dyn_has_symbol(const char *name) {
-    if (!nng_dyn_libok()) return 0;
+    if (!nng_libok()) return 0;
     return nng_sym(name) != NULL;
 }
 
@@ -385,7 +385,7 @@ int nng_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!nng_dyn_libok()) return fallback;                                 \
+        if (!nng_libok()) return fallback;                                     \
         *(void **)(&fn) = nng_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "nng_dyn: dlsym failed: %s\n", #name);             \
@@ -398,7 +398,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!nng_dyn_libok()) return;                                          \
+        if (!nng_libok()) return;                                              \
         *(void **)(&fn) = nng_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "nng_dyn: dlsym failed: %s\n", #name);             \
@@ -417,7 +417,7 @@ void name(const char *msgid, const char *msg, ...) {                           \
     vsnprintf(buf, sizeof buf, msg ? msg : "", ap);                            \
     va_end(ap);                                                                \
     if (!fn) {                                                                 \
-        if (!nng_dyn_libok()) return;                                          \
+        if (!nng_libok()) return;                                              \
         *(void **)(&fn) = nng_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "nng_dyn: dlsym failed: %s\n", #name);             \
@@ -435,7 +435,7 @@ void name(nng_log_level level, const char *msgid, const char *msg, ...) {      \
     vsnprintf(buf, sizeof buf, msg ? msg : "", ap);                            \
     va_end(ap);                                                                \
     if (!fn) {                                                                 \
-        if (!nng_dyn_libok()) return;                                          \
+        if (!nng_libok()) return;                                              \
         *(void **)(&fn) = nng_sym(#name);                                      \
         if (!fn) {                                                             \
             fprintf(stderr, "nng_dyn: dlsym failed: %s\n", #name);             \

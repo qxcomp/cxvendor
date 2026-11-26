@@ -187,11 +187,11 @@ static int thrift_c_glib_do_load(const char *library_path) {
         if (thrift_c_glib_handle) { free_lib(thrift_c_glib_handle); thrift_c_glib_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "thrift_c_glib_dyn: loaded thrift_c_glib %d %s\n", res, candidates[res]);
+    fprintf(stderr, "thrift_c_glib_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int thrift_c_glib_dyn_libok(void) {
+int thrift_c_glib_libok(void) {
     if (thrift_c_glib_init_state == 0)
         thrift_c_glib_init_state = (thrift_c_glib_do_load(NULL) == 0) ? 1 : -1;
     return (thrift_c_glib_init_state == 1 && thrift_c_glib_handle != NULL) ? 1 : 0;
@@ -212,7 +212,7 @@ void thrift_c_glib_dyn_cleanup(void) {
 }
 
 int thrift_c_glib_dyn_has_symbol(const char *name) {
-    if (!thrift_c_glib_dyn_libok()) return 0;
+    if (!thrift_c_glib_libok()) return 0;
     return thrift_c_glib_sym(name) != NULL;
 }
 
@@ -223,7 +223,7 @@ int thrift_c_glib_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!thrift_c_glib_dyn_libok()) return fallback;                       \
+        if (!thrift_c_glib_libok()) return fallback;                           \
         *(void **)(&fn) = thrift_c_glib_sym(#name);                            \
         if (!fn) {                                                             \
             fprintf(stderr, "thrift_c_glib_dyn: dlsym failed: %s\n", #name);   \
@@ -236,7 +236,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!thrift_c_glib_dyn_libok()) return;                                \
+        if (!thrift_c_glib_libok()) return;                                    \
         *(void **)(&fn) = thrift_c_glib_sym(#name);                            \
         if (!fn) {                                                             \
             fprintf(stderr, "thrift_c_glib_dyn: dlsym failed: %s\n", #name);   \

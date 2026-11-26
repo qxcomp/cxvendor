@@ -231,7 +231,7 @@ struct uv_loop_s { void* data; unsigned int active_handles; struct uv__queue han
 
 /* ------------------------- 封装函数声明 ------------------------- */
 int libuv_dyn_init(const char *library_path);
-int libuv_dyn_libok(void);
+int libuv_libok(void);
 void libuv_dyn_cleanup(void);
 
 unsigned int uv_version(void);
@@ -273,7 +273,7 @@ int main(int argc, char **argv) {
 
     if (libuv_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libuv 不可加载\n");
-    failures += CHECK(libuv_dyn_libok() != 0);
+    failures += CHECK(libuv_libok() != 0);
 
     printf("libuv %s (0x%06x), cpus=%u\n", uv_version_string(), uv_version(),
            uv_available_parallelism());

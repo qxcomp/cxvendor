@@ -170,7 +170,7 @@ enum evhttp_transfer_encoding_header_status {
 
 /* ------------------------- 封装函数声明 ------------------------- */
 int libevent_dyn_init(const char *library_path);
-int libevent_dyn_libok(void);
+int libevent_libok(void);
 void libevent_dyn_cleanup(void);
 
 const char *event_get_version(void);
@@ -212,7 +212,7 @@ int main(int argc, char **argv) {
 
     if (libevent_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libevent 不可加载\n");
-    failures += CHECK(libevent_dyn_libok() != 0);
+    failures += CHECK(libevent_libok() != 0);
 
     /* 1. 版本与后端 */
     {

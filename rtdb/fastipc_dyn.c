@@ -170,11 +170,11 @@ static int fastipc_do_load(const char *library_path) {
         if (fastipc_handle) { free_lib(fastipc_handle); fastipc_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "fastipc_dyn: loaded fastipc %d %s\n", res, candidates[res]);
+    fprintf(stderr, "fastipc_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
-int fastipc_dyn_libok(void) {
+int fastipc_libok(void) {
     if (fastipc_init_state == 0)
         fastipc_init_state = (fastipc_do_load(NULL) == 0) ? 1 : -1;
     return (fastipc_init_state == 1 && fastipc_handle != NULL) ? 1 : 0;
@@ -195,7 +195,7 @@ void fastipc_dyn_cleanup(void) {
 }
 
 int fastipc_dyn_has_symbol(const char *name) {
-    if (!fastipc_dyn_libok()) return 0;
+    if (!fastipc_libok()) return 0;
     return fastipc_sym(name) != NULL;
 }
 
@@ -206,7 +206,7 @@ int fastipc_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!fastipc_dyn_libok()) return fallback;                             \
+        if (!fastipc_libok()) return fallback;                                 \
         *(void **)(&fn) = fastipc_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "fastipc_dyn: dlsym failed: %s\n", #name);         \
@@ -219,7 +219,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!fastipc_dyn_libok()) return;                                      \
+        if (!fastipc_libok()) return;                                          \
         *(void **)(&fn) = fastipc_sym(#name);                                  \
         if (!fn) {                                                             \
             fprintf(stderr, "fastipc_dyn: dlsym failed: %s\n", #name);         \

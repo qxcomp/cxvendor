@@ -174,7 +174,7 @@ static int tinyxml2_do_load(const char *library_path) {
         if (tinyxml2_handle) { free_lib(tinyxml2_handle); tinyxml2_handle = NULL; }
         return -1;
     }
-    fprintf(stderr, "tinyxml2_dyn: loaded tinyxml2 (11 headers)\n");
+    fprintf(stderr, "tinyxml2_dyn: loaded %d %s (11 headers)\n", i, candidates[i]);
 
     if (!getenv("TINYXML2_DYN_NO_SELFTEST")) {
         if (tinyxml2_dyn_selftest() != 0) {
@@ -190,7 +190,7 @@ static int tinyxml2_do_load(const char *library_path) {
     return 0;
 }
 
-int tinyxml2_dyn_libok(void) {
+int tinyxml2_libok(void) {
     if (tinyxml2_init_state == 0)
         tinyxml2_init_state = (tinyxml2_do_load(NULL) == 0) ? 1 : -1;
     return (tinyxml2_init_state == 1 && tinyxml2_handle != NULL) ? 1 : 0;
@@ -212,7 +212,7 @@ void tinyxml2_dyn_cleanup(void) {
 }
 
 int tinyxml2_dyn_has_symbol(const char *name) {
-    if (!tinyxml2_dyn_libok()) return 0;
+    if (!tinyxml2_libok()) return 0;
     return tinyxml2_sym(name) != NULL;
 }
 
@@ -223,7 +223,7 @@ int tinyxml2_dyn_has_symbol(const char *name) {
     ret name params {                                                       \
         static ret (*fn) params = NULL;                                     \
         if (!fn) {                                                          \
-            if (!tinyxml2_dyn_libok()) return fallback;                     \
+            if (!tinyxml2_libok()) return fallback;                         \
             *(void **)(&fn) = tinyxml2_sym(mangled);                        \
             if (!fn) {                                                      \
                 fprintf(stderr, "tinyxml2_dyn: dlsym failed: %s\n", mangled); \
@@ -237,7 +237,7 @@ int tinyxml2_dyn_has_symbol(const char *name) {
     void name params {                                                      \
         static void (*fn) params = NULL;                                    \
         if (!fn) {                                                          \
-            if (!tinyxml2_dyn_libok()) return;                              \
+            if (!tinyxml2_libok()) return;                                  \
             *(void **)(&fn) = tinyxml2_sym(mangled);                        \
             if (!fn) {                                                      \
                 fprintf(stderr, "tinyxml2_dyn: dlsym failed: %s\n", mangled); \
@@ -536,7 +536,7 @@ void tinyxml2_XMLDocument_SetError(void *a0, int a1, int a2, const char *a3, ...
     va_list ap;
     char *b;
     if (!fn) {
-        if (!tinyxml2_dyn_libok()) return;
+        if (!tinyxml2_libok()) return;
         *(void **)(&fn) = tinyxml2_sym("_ZN8tinyxml211XMLDocument8SetErrorENS_8XMLErrorEiPKcz");
         if (!fn) {
             fprintf(stderr, "tinyxml2_dyn: dlsym failed: XMLDocument::SetError\n");
@@ -557,7 +557,7 @@ void tinyxml2_XMLPrinter_Print(void *a0, const char *a1, ...) {
     va_list ap;
     char *b;
     if (!fn) {
-        if (!tinyxml2_dyn_libok()) return;
+        if (!tinyxml2_libok()) return;
         *(void **)(&fn) = tinyxml2_sym("_ZN8tinyxml210XMLPrinter5PrintEPKcz");
         if (!fn) {
             fprintf(stderr, "tinyxml2_dyn: dlsym failed: XMLPrinter::Print\n");

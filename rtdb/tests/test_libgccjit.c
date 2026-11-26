@@ -24,7 +24,7 @@ typedef struct gcc_jit_object gcc_jit_object;
 
 /* ---------- 动态层接口 ---------- */
 extern int gccjit_dyn_init(const char *);
-extern int gccjit_dyn_libok(void);
+extern int libgccjit_libok(void);
 extern void gccjit_dyn_cleanup(void);
 extern int gccjit_dyn_has_symbol(const char *);
 
@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
     if (gccjit_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("libgccjit not installed, skipping gccjit_dyn test\n");
 
-    errs += CHECK(gccjit_dyn_libok());
+    errs += CHECK(libgccjit_libok());
     errs += CHECK(!gccjit_dyn_has_symbol("gcc_jit_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (gccjit_dyn_has_symbol(names[i])) found++;

@@ -11,7 +11,7 @@ typedef struct _mxml_options_s mxml_options_t;
 typedef enum { MXML_T_IGNORE = -1, MXML_T_ELEMENT = 4, MXML_T_TEXT = 8 } mxml_test_type_t;
 
 extern int  mxml_dyn_init(const char *);
-extern int  mxml_dyn_libok(void);
+extern int  mxml_libok(void);
 extern void mxml_dyn_cleanup(void);
 extern int  mxml_dyn_has_symbol(const char *);
 extern int  mxml_dyn_abi(void);
@@ -37,7 +37,7 @@ int main(void) {
     if (mxml_dyn_init(NULL) != 0)
         TEST_SKIP("libmxml not installed, skipping mxml_dyn test\n");
 
-    errs += CHECK(mxml_dyn_libok());
+    errs += CHECK(mxml_libok());
     abi = mxml_dyn_abi();
     printf("info: detected mxml ABI = %d\n", abi);
     errs += CHECK(abi == 3 || abi == 4 || abi == -1);

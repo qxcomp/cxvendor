@@ -65,7 +65,7 @@ typedef struct avro_value {
 
 /* ---------- 动态层接口 ---------- */
 extern int avro_dyn_init(const char *);
-extern int avro_dyn_libok(void);
+extern int avro_libok(void);
 extern void avro_dyn_cleanup(void);
 extern int avro_dyn_has_symbol(const char *);
 
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
     if (avro_dyn_init(argc > 1 ? argv[1] : NULL) != 0)
         TEST_SKIP("avro not installed, skipping avro_dyn test\n");
 
-    errs += CHECK(avro_dyn_libok());
+    errs += CHECK(avro_libok());
     errs += CHECK(!avro_dyn_has_symbol("avro_no_such_symbol_xyz"));
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (avro_dyn_has_symbol(names[i])) found++;

@@ -180,7 +180,7 @@ static int luajit_do_load(const char *library_path) {
         fprintf(stderr, "luajit_dyn: cannot load luajit (%s)\n", lib_error());
         return -1;
     }
-    fprintf(stderr, "luajit_dyn: loaded luajit %d %s\n", res, candidates[res]);
+    fprintf(stderr, "luajit_dyn: loaded %d %s\n", res, candidates[res]);
     return 0;
 }
 
@@ -198,10 +198,10 @@ void luajit_dyn_cleanup(void) {
     luajit_init_state = 0;
 }
 
-int luajit_dyn_libok(void) { return luajit_init_state == 1 && luajit_handle != NULL; }
+int luajit_libok(void) { return luajit_init_state == 1 && luajit_handle != NULL; }
 
 int luajit_dyn_has_symbol(const char *name) {
-    if (!luajit_dyn_libok()) return 0;
+    if (!luajit_libok()) return 0;
     return luajit_sym(name) != NULL;
 }
 
@@ -212,7 +212,7 @@ int luajit_dyn_has_symbol(const char *name) {
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
-        if (!luajit_dyn_libok()) return fallback;                              \
+        if (!luajit_libok()) return fallback;                                  \
         *(void **)(&fn) = luajit_sym(#name);                                   \
         if (!fn) {                                                             \
             fprintf(stderr, "luajit_dyn: dlsym failed: %s\n", #name);          \
@@ -225,7 +225,7 @@ ret name params {                                                              \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
-        if (!luajit_dyn_libok()) return;                                       \
+        if (!luajit_libok()) return;                                           \
         *(void **)(&fn) = luajit_sym(#name);                                   \
         if (!fn) {                                                             \
             fprintf(stderr, "luajit_dyn: dlsym failed: %s\n", #name);          \
@@ -278,7 +278,7 @@ const char *lua_pushfstring(lua_State *L, const char *fmt, ...) {
     void *r;
     (void)L; (void)fmt; /* 参数由 __builtin_apply_args() 整体转发 */
     if (!fn) {
-        if (!luajit_dyn_libok()) return NULL;
+        if (!luajit_libok()) return NULL;
         *(void **)(&fn) = luajit_sym("lua_pushfstring");
         if (!fn) {
             fprintf(stderr, "luajit_dyn: dlsym failed: lua_pushfstring\n");
@@ -363,7 +363,7 @@ int luaL_error(lua_State *L, const char *fmt, ...) {
     void *r;
     (void)L; (void)fmt; /* 参数由 __builtin_apply_args() 整体转发 */
     if (!fn) {
-        if (!luajit_dyn_libok()) return 0;
+        if (!luajit_libok()) return 0;
         *(void **)(&fn) = luajit_sym("luaL_error");
         if (!fn) {
             fprintf(stderr, "luajit_dyn: dlsym failed: luaL_error\n");
