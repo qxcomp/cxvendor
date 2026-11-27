@@ -24,7 +24,7 @@ TESTS := rclone python ruby guile vte notify dbus curl sqlite3 bdb \
          libxml2 expat tinyxml2 \
          gdbm lmdb leveldb \
          mxml opendal \
-         md4c cmark \
+         md4c cmark gumbo lexbor \
          protobuf-c thrift_c_glib libcbor tinycbor msgpack avro fastipc lcm tachyon nng mosquitto zmq libgccjit luajit mir lightning reproc fswatch \
          mbedtls wolfssl gnutls pcre2 tre re2
 
