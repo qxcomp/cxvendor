@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "bun",
+  "version-semver": "1.4.5",
+  "description": "Bun JavaScript runtime built from source; macOS builds target 11.0 with a local WebKit build",
+  "homepage": "https://bun.com/",
+  "license": "MIT",
+  "supports": "(linux | windows | osx) & (x64 | arm64)"
+}
