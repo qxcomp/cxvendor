@@ -1,0 +1,8 @@
+{
+  "name": "nodejs22",
+  "version-semver": "22.23.5",
+  "description": "Node.js 22.23.5 - JavaScript runtime (host tool)",
+  "homepage": "https://nodejs.org/",
+  "license": "MIT",
+  "supports": "(linux | windows | osx) & (x64 | arm64)"
+}

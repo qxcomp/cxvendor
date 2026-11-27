@@ -5,11 +5,5 @@
   "description": "Joplin Terminal - the official command-line note taking client",
   "homepage": "https://joplinapp.org/",
   "license": "AGPL-3.0-or-later",
-  "supports": "(linux | windows | osx) & (x64 | arm64)",
-  "dependencies": [
-    {
-      "name": "vcpkg-tool-nodejs",
-      "host": true
-    }
-  ]
+  "supports": "(linux | windows | osx) & (x64 | arm64)"
 }

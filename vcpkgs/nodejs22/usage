@@ -1,0 +1,16 @@
+nodejs22 provides Node.js 22.23.5 as a standalone host tool.
+
+Installed location
+  Linux/macOS: tools/nodejs22/bin/node, npm, npx
+  Windows:     tools/nodejs22/node.exe, npm.cmd, npx.cmd
+
+Add the appropriate directory to PATH to use node/npm/npx:
+  Linux/macOS: <vcpkg-root>/installed/<triplet>/tools/nodejs22/bin
+  Windows:     <vcpkg-root>\installed\<triplet>\tools\nodejs22
+
+Node 22 runs on macOS 11.0+; the builtin vcpkg-tool-nodejs (Node 24) is built
+for macOS 13.5+ and fails on older systems with a dyld libc++ error.
+
+This port installs a prebuilt binary for the target OS and architecture.
+Same OS/architecture with a different linkage triplet (for example
+x64-osx-dynamic) is supported; a real host/target mismatch prints a warning.

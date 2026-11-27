@@ -26,7 +26,14 @@ The first launch creates the profile in ~/.config/joplin (Linux),
 (Windows).
 
 Build note
-  Native addons are built for the host architecture, so Windows and macOS
-  triplets must be built on a matching host; the port refuses to build when
-  cross-compiling. npm installs transitive dependencies at build time, so the
+  Native addons are built for the host OS and architecture, so Windows and
+  macOS triplets must be built on a matching host. Different linkage triplets
+  on the same OS/architecture (for example x64-osx-dynamic on an x64-osx host)
+  are fine; the port refuses only a genuinely different host OS or
+  architecture. npm installs transitive dependencies at build time, so the
   build machine needs network access.
+  At build time the port first checks any Node.js already on PATH: it must run
+  and satisfy ^18.17.0 || ^20.3.0 || >=21.0.0 (sharp's requirement). Unusable
+  candidates are reported and skipped. Only when no system Node qualifies does
+  the port download Node 22.23.5 on demand into buildtrees; no vcpkg Node
+  package is installed unconditionally.
