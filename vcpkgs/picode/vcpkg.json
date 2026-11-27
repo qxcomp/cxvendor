@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "picode",
+  "version-semver": "1.6.1",
+  "description": "Pi coding agent CLI (@earendil-works/pi-coding-agent)",
+  "homepage": "https://github.com/earendil-works/pi",
+  "license": "MIT",
+  "supports": "(linux | windows | osx) & (x64 | arm64)",
+  "features": {
+    "nodejs22": {
+      "description": "Use the standalone nodejs22 host tool when no usable system Node.js is available",
+      "dependencies": [
+        { "name": "nodejs22", "host": true }
+      ]
+    }
+  }
+}

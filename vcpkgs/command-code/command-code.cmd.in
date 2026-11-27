@@ -1,0 +1,25 @@
+@echo off
+setlocal
+rem Command Code requires Node.js 22+. Prefer a system Node; fall back to the
+rem nodejs22 host tool installed by the optional 'nodejs22' feature.
+set "_check=process.exit(Number(process.versions.node.split('.')[0])>=22?0:1)"
+set "_node="
+where node >nul 2>nul
+if not errorlevel 1 (
+  node -e "%_check%" >nul 2>nul
+  if not errorlevel 1 set "_node=node"
+)
+if not defined _node (
+  for %%P in (@_CC_NODEJS22_WIN_PATHS@) do (
+    if exist %%P (
+      "%%~P" -e "%_check%" >nul 2>nul
+      if not errorlevel 1 set "_node=%%~P"
+    )
+  )
+)
+if not defined _node (
+  echo @CC_LAUNCHER_NAME@: no usable Node.js 22+ found; install Node.js 22+ or install command-code[nodejs22]. 1>&2
+  exit /b 127
+)
+"%_node%" "%~dp0dist\index.mjs" %*
+exit /b %ERRORLEVEL%

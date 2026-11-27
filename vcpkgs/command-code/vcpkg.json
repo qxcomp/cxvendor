@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "command-code",
+  "version-semver": "1.93.4",
+  "description": "Command Code coding agent CLI (cmd)",
+  "homepage": "https://github.com/CommandCodeAI/command-code",
+  "license": null,
+  "supports": "(linux | windows | osx) & (x64 | arm64)",
+  "features": {
+    "nodejs22": {
+      "description": "Use the standalone nodejs22 host tool when no usable system Node.js is available",
+      "dependencies": [
+        { "name": "nodejs22", "host": true }
+      ]
+    }
+  }
+}

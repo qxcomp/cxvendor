@@ -14,7 +14,7 @@ if command -v node >/dev/null 2>&1 && _node_usable node; then
   _node=node
 fi
 if [ -z "$_node" ]; then
-  for _cand in @LIBRETV_NODEJS22_UNIX_PATHS@; do
+  for _cand in @_LIBRETV_NODEJS22_UNIX_PATHS@; do
     if [ -x "$_cand" ] && _node_usable "$_cand"; then
       _node="$_cand"
       break

@@ -1,0 +1,25 @@
+@echo off
+setlocal
+rem Pi requires Node.js 22.19+. Prefer a system Node; fall back to the
+rem nodejs22 host tool installed by the optional 'nodejs22' feature.
+set "_check=const p=process.versions.node.split('.').map(Number);process.exit((p[0]>22 ^|^| (p[0]==22 ^&^& p[1]>=19))?0:1)"
+set "_node="
+where node >nul 2>nul
+if not errorlevel 1 (
+  node -e "%_check%" >nul 2>nul
+  if not errorlevel 1 set "_node=node"
+)
+if not defined _node (
+  for %%P in (@_PICODE_NODEJS22_WIN_PATHS@) do (
+    if exist %%P (
+      "%%~P" -e "%_check%" >nul 2>nul
+      if not errorlevel 1 set "_node=%%~P"
+    )
+  )
+)
+if not defined _node (
+  echo picode: no usable Node.js 22.19+ found; install Node.js 22.19+ or install picode[nodejs22]. 1>&2
+  exit /b 127
+)
+"%_node%" "%~dp0dist\bundle\cli.js" %*
+exit /b %ERRORLEVEL%

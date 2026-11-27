@@ -1,0 +1,37 @@
+#!/bin/sh
+# Pi requires Node.js 22.19+. Prefer a system Node; fall back to the nodejs22
+# host tool installed by the optional 'nodejs22' feature.
+_node_usable() {
+  _v=$("$1" -p process.versions.node 2>/dev/null) || return 1
+  case "$_v" in
+    [0-9]*)
+      _maj=${_v%%.*}
+      _rest=${_v#*.}
+      _min=${_rest%%.*}
+      if [ "$_maj" -gt 22 ]; then return 0; fi
+      if [ "$_maj" -eq 22 ] && [ "$_min" -ge 19 ]; then return 0; fi
+      return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+_node=""
+if command -v node >/dev/null 2>&1 && _node_usable node; then
+  _node=node
+fi
+if [ -z "$_node" ]; then
+  for _cand in @_PICODE_NODEJS22_UNIX_PATHS@; do
+    if [ -x "$_cand" ] && _node_usable "$_cand"; then
+      _node="$_cand"
+      break
+    fi
+  done
+fi
+if [ -z "$_node" ]; then
+  echo "picode: no usable Node.js 22.19+ found; install Node.js 22.19+ or install picode[nodejs22]." >&2
+  exit 127
+fi
+
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$_node" "$_here/dist/bundle/cli.js" "$@"

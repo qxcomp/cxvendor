@@ -45,7 +45,7 @@ foreach(_root
     "${CURRENT_INSTALLED_DIR}/tools/nodejs22")
     set(_unix_path "${_root}/bin/node")
     if(_LIBRETV_NODEJS22_UNIX_PATHS)
-        set(_LIBRETV_NODEJS22_UNIX_PATHS "${_LIBRETV_NODEJS22_UNIX_PATHS}:${_unix_path}")
+        set(_LIBRETV_NODEJS22_UNIX_PATHS "${_LIBRETV_NODEJS22_UNIX_PATHS} ${_unix_path}")
     else()
         set(_LIBRETV_NODEJS22_UNIX_PATHS "${_unix_path}")
     endif()

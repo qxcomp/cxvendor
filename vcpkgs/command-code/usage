@@ -1,0 +1,33 @@
+command-code provides the Command Code coding agent CLI 1.93.4, installed
+under tools/command-code/.
+
+Launchers
+  Linux/macOS: tools/command-code/cmd, cmdc, commandcode, command-code
+  Windows:     tools/command-code\cmdc.cmd, command-code.cmd, commandcode.cmd
+               (cmd.cmd is installed but Windows resolves the built-in cmd.exe first)
+
+Run
+  cmd --help
+  cmd --version
+  cmdc
+
+The launcher keeps the current working directory as the agent workspace.
+
+Runtime requirement
+  Node.js 22+ is required. The launcher prefers Node from PATH and falls back
+  to the nodejs22 host tool when the 'nodejs22' feature is enabled. If neither
+  is usable it prints an error and exits with code 127.
+
+License
+  The upstream npm package declares "UNLICENSED" and ships no license text;
+  this port records that in share/command-code/copyright (manifest license is
+  null). Review the upstream terms before redistribution.
+
+Conditional nodejs22 dependency
+  The manifest declares a 'nodejs22' feature whose dependency is the standalone
+  host tool port nodejs22. Use the provided install.sh / install.ps1 script: it
+  checks the system Node first and enables the feature only when no usable
+  Node is present, so vcpkg installs nodejs22 exactly in that case.
+  Example: ./install.sh --vcpkg-root /path/to/vcpkg --triplet x64-linux
+  The dependency is visible with:
+    vcpkg depend-info 'command-code[nodejs22]' --overlay-ports=... --format=tree

@@ -9,7 +9,7 @@ if not errorlevel 1 (
   if not errorlevel 1 set "_node=node"
 )
 if not defined _node (
-  for %%P in (@LIBRETV_NODEJS22_WIN_PATHS@) do (
+  for %%P in (@_LIBRETV_NODEJS22_WIN_PATHS@) do (
     if exist %%P set "_node=%%~P"
   )
 )
