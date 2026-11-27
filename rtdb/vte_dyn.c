@@ -134,18 +134,18 @@ typedef void (*GAsyncReadyCallback)(void *source_object,
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE vte_lib_handle_t;
+  static vte_lib_handle_t vte_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *vte_get_sym(vte_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void vte_free_lib(vte_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *vte_lib_error(void) { return "LoadLibrary failed"; }
+  #define VTE_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *vte_lib_handle_t;
+  static vte_lib_handle_t vte_load_lib(const char *path) {
       /*
        * VTE 是 C++ 库，和 GTK 的初始化顺序有关。实测在 GTK 已加载后
        * 再普通 dlopen libvte，部分发行版会在首次绘制时崩溃。
@@ -159,17 +159,17 @@ typedef void (*GAsyncReadyCallback)(void *source_object,
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *vte_get_sym(vte_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void vte_free_lib(vte_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *vte_lib_error(void) { return dlerror(); }
+  #define VTE_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t vte_handle_lib = NULL;
-static int init_state = 0;          /* 0=未初始化, 1=已加载, -1=失败 */
+static vte_lib_handle_t vte_handle_lib = NULL;
+static int vte_init_state = 0;          /* 0=未初始化, 1=已加载, -1=失败 */
 static int vte_gtk_major = 3;       /* 3 / 4 */
 static int want_gtk = 0;            /* 0=自动（默认3）, 3, 4 */
 static int want_gtk_explicit = 0;   /* 是否由 env/init_gtk 明确指定 */
@@ -178,34 +178,34 @@ static int vte_lib_minor = 0;
 static int vte_lib_micro = 0;
 static char vte_version_str[128];
 
-#define MAX_CANDIDATES 128
-#define PATH_BUF_LEN   1024
+#define VTE_MAX_CANDIDATES 128
+#define VTE_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 候选路径工具
  * ============================================================ */
-static int push_candidate(const char **candidates,
-                          char bufs[][PATH_BUF_LEN],
+static int vte_push_candidate(const char **candidates,
+                          char bufs[][VTE_PATH_BUF_LEN],
                           int n, const char *path) {
-    if (n >= MAX_CANDIDATES - 1) return n;
-    snprintf(bufs[n], PATH_BUF_LEN, "%s", path);
+    if (n >= VTE_MAX_CANDIDATES - 1) return n;
+    snprintf(bufs[n], VTE_PATH_BUF_LEN, "%s", path);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static int push_candidate_fmt(const char **candidates,
-                              char bufs[][PATH_BUF_LEN],
+static int vte_push_candidate_fmt(const char **candidates,
+                              char bufs[][VTE_PATH_BUF_LEN],
                               int n, const char *fmt, ...) {
     va_list ap;
-    if (n >= MAX_CANDIDATES - 1) return n;
+    if (n >= VTE_MAX_CANDIDATES - 1) return n;
     va_start(ap, fmt);
-    vsnprintf(bufs[n], PATH_BUF_LEN, fmt, ap);
+    vsnprintf(bufs[n], VTE_PATH_BUF_LEN, fmt, ap);
     va_end(ap);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static char *dup_string(const char *s) {
+static char *vte_dup_string(const char *s) {
     size_t len = strlen(s) + 1;
     char *p = (char *)malloc(len);
     if (p) memcpy(p, s, len);
@@ -214,37 +214,37 @@ static char *dup_string(const char *s) {
 
 /* 目标 GTK 变体的默认库名 */
 static int push_vte_dir_names(const char **candidates,
-                              char bufs[][PATH_BUF_LEN], int n,
+                              char bufs[][VTE_PATH_BUF_LEN], int n,
                               const char *dir) {
 #if defined(_WIN32)
     if (vte_gtk_major == 4) {
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-gtk4-0.dll", dir);
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-gtk4.dll", dir);
     } else {
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-0.dll", dir);
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91.dll", dir);
     }
 #elif defined(__APPLE__)
     if (vte_gtk_major == 4)
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-gtk4.dylib", dir);
     else
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91.dylib", dir);
 #else
     if (vte_gtk_major == 4) {
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-gtk4.so.0", dir);
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91-gtk4.so", dir);
     } else {
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91.so.0", dir);
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = vte_push_candidate_fmt(candidates, bufs, n,
                                "%s/libvte-2.91.so", dir);
     }
 #endif
@@ -252,27 +252,27 @@ static int push_vte_dir_names(const char **candidates,
 }
 
 static int push_vte_bare_names(const char **candidates,
-                               char bufs[][PATH_BUF_LEN], int n) {
+                               char bufs[][VTE_PATH_BUF_LEN], int n) {
 #if defined(_WIN32)
     if (vte_gtk_major == 4) {
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-gtk4-0.dll");
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.dll");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-gtk4-0.dll");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.dll");
     } else {
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-0.dll");
-        n = push_candidate(candidates, bufs, n, "libvte-2.91.dll");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-0.dll");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91.dll");
     }
 #elif defined(__APPLE__)
     if (vte_gtk_major == 4)
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.dylib");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.dylib");
     else
-        n = push_candidate(candidates, bufs, n, "libvte-2.91.dylib");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91.dylib");
 #else
     if (vte_gtk_major == 4) {
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.so.0");
-        n = push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.so");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.so.0");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91-gtk4.so");
     } else {
-        n = push_candidate(candidates, bufs, n, "libvte-2.91.so.0");
-        n = push_candidate(candidates, bufs, n, "libvte-2.91.so");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91.so.0");
+        n = vte_push_candidate(candidates, bufs, n, "libvte-2.91.so");
     }
 #endif
     return n;
@@ -281,8 +281,8 @@ static int push_vte_bare_names(const char **candidates,
 /* ============================================================
  * 加载与版本探测
  * ============================================================ */
-static int try_candidate(const char *path, int idx) {
-    lib_handle_t h;
+static int vte_try_candidate(const char *path, int idx) {
+    vte_lib_handle_t h;
     void *sym_new;
     void *sym_type;
     void *sym_major;
@@ -293,23 +293,23 @@ static int try_candidate(const char *path, int idx) {
     guint (*fn_micro)(void) = NULL;
     int is_gtk4;
 
-    h = load_lib(path);
+    h = vte_load_lib(path);
     if (!h) return -1;
 
-    sym_new = get_sym(h, "vte_terminal_new");
-    sym_type = get_sym(h, "vte_terminal_get_type");
-    sym_major = get_sym(h, "vte_get_major_version");
-    sym_minor = get_sym(h, "vte_get_minor_version");
-    sym_micro = get_sym(h, "vte_get_micro_version");
+    sym_new = vte_get_sym(h, "vte_terminal_new");
+    sym_type = vte_get_sym(h, "vte_terminal_get_type");
+    sym_major = vte_get_sym(h, "vte_get_major_version");
+    sym_minor = vte_get_sym(h, "vte_get_minor_version");
+    sym_micro = vte_get_sym(h, "vte_get_micro_version");
     if (!sym_new || !sym_type || !sym_major || !sym_minor || !sym_micro) {
-        free_lib(h);
+        vte_free_lib(h);
         return -1;
     }
 
     is_gtk4 = (strstr(path, "gtk4") != NULL) ? 1 : 0;
     if (want_gtk_explicit && want_gtk != 0 &&
         is_gtk4 != (want_gtk == 4)) {
-        free_lib(h);
+        vte_free_lib(h);
         return -1;
     }
 
@@ -328,7 +328,7 @@ static int try_candidate(const char *path, int idx) {
     return 0;
 }
 
-static void load_want_from_env(void) {
+static void vte_load_want_from_env(void) {
     const char *v = getenv("VTE_DYN_GTK");
     if (!v || !*v) return;
     if (v[0] == '4') {
@@ -340,29 +340,29 @@ static void load_want_from_env(void) {
     }
 }
 
-static int do_load(const char *library_path) {
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+static int vte_do_load(const char *library_path) {
+    static char bufs[VTE_MAX_CANDIDATES][VTE_PATH_BUF_LEN];
+    const char *candidates[VTE_MAX_CANDIDATES];
     int n = 0;
     int i;
     const char *env_path;
 
     if (vte_handle_lib) return 0;
 
-    load_want_from_env();
+    vte_load_want_from_env();
     /* 未明确指定 GTK 版本时，默认按 GTK3 生成候选库名；
-       显式路径若指向 gtk4 变体，try_candidate 会按实际路径接受。 */
+       显式路径若指向 gtk4 变体，vte_try_candidate 会按实际路径接受。 */
     vte_gtk_major = (want_gtk == 4) ? 4 : 3;
 
     /* 1. 显式路径 */
     if (library_path && *library_path)
-        n = push_candidate(candidates, bufs, n, library_path);
+        n = vte_push_candidate(candidates, bufs, n, library_path);
 
     /* 2. 环境变量 */
     {
         const char *explicit_lib = getenv("VTE_DYN_LIB");
         if (explicit_lib && *explicit_lib)
-            n = push_candidate(candidates, bufs, n, explicit_lib);
+            n = vte_push_candidate(candidates, bufs, n, explicit_lib);
     }
 
     /* 3. 系统搜索路径目录 */
@@ -376,11 +376,11 @@ static int do_load(const char *library_path) {
 #endif
     );
     if (env_path && *env_path) {
-        char *copy = dup_string(env_path);
+        char *copy = vte_dup_string(env_path);
         if (copy) {
             char *p = copy;
             while (p && *p) {
-                char *sep = strchr(p, PATH_SEP);
+                char *sep = strchr(p, VTE_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p)
                     n = push_vte_dir_names(candidates, bufs, n, p);
@@ -397,7 +397,7 @@ static int do_load(const char *library_path) {
 #ifndef _WIN32
     {
         const char *home = getenv("HOME");
-        char dir[PATH_BUF_LEN];
+        char dir[VTE_PATH_BUF_LEN];
         if (home && *home) {
             snprintf(dir, sizeof(dir), "%s/.nix-profile/lib", home);
             n = push_vte_dir_names(candidates, bufs, n, dir);
@@ -424,7 +424,7 @@ static int do_load(const char *library_path) {
     {
         const char *prefix = getenv("PREFIX"); /* Termux */
         if (prefix && *prefix) {
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = vte_push_candidate_fmt(candidates, bufs, n,
                                    "%s/lib/libvte-2.91.so.0", prefix);
         }
     }
@@ -435,12 +435,12 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i], i) == 0)
+        if (vte_try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
     {
-        const char *err = lib_error();
+        const char *err = vte_lib_error();
         fprintf(stderr, "vte_dyn: cannot load libvte-2.91%s (%s)\n",
                 want_gtk == 4 ? "-gtk4" : "",
                 err ? err : "unknown error");
@@ -452,35 +452,35 @@ static int do_load(const char *library_path) {
  * 控制函数
  * ============================================================ */
 int vte_libok(void) {
-    if (init_state == 0)
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
-    return (init_state == 1 && vte_handle_lib != NULL) ? 1 : 0;
+    if (vte_init_state == 0)
+        vte_init_state = (vte_do_load(NULL) == 0) ? 1 : -1;
+    return (vte_init_state == 1 && vte_handle_lib != NULL) ? 1 : 0;
 }
 
 int vte_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (vte_init_state == 1) return 0;
+    if (vte_init_state == -1) return -1;
+    if (vte_do_load(library_path) == 0) {
+        vte_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    vte_init_state = -1;
     return -1;
 }
 
 int vte_dyn_init_gtk(int gtk_major, const char *library_path) {
     if (gtk_major != 3 && gtk_major != 4) return -1;
-    if (init_state == 1) {
+    if (vte_init_state == 1) {
         return (vte_gtk_major == gtk_major) ? 0 : -1;
     }
-    if (init_state == -1) init_state = 0;
+    if (vte_init_state == -1) vte_init_state = 0;
     want_gtk = gtk_major;
     want_gtk_explicit = 1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (vte_do_load(library_path) == 0) {
+        vte_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    vte_init_state = -1;
     return -1;
 }
 
@@ -489,50 +489,50 @@ int vte_dyn_init_gtk(int gtk_major, const char *library_path) {
  * 只有加载失败状态才复位，允许修正路径/GTK 变体后重试。
  */
 void vte_dyn_cleanup(void) {
-    if (init_state == -1)
-        init_state = 0;
+    if (vte_init_state == -1)
+        vte_init_state = 0;
 }
 
 const char *vte_dyn_version(void) {
-    if (init_state == 0) vte_libok();
+    if (vte_init_state == 0) vte_libok();
     return vte_version_str;
 }
 
 int vte_dyn_major(void) {
-    if (init_state == 0) vte_libok();
+    if (vte_init_state == 0) vte_libok();
     return vte_lib_major;
 }
 
 int vte_dyn_minor(void) {
-    if (init_state == 0) vte_libok();
+    if (vte_init_state == 0) vte_libok();
     return vte_lib_minor;
 }
 
 int vte_dyn_micro(void) {
-    if (init_state == 0) vte_libok();
+    if (vte_init_state == 0) vte_libok();
     return vte_lib_micro;
 }
 
 int vte_dyn_gtk_major(void) {
-    if (init_state == 0) vte_libok();
+    if (vte_init_state == 0) vte_libok();
     return vte_gtk_major;
 }
 
 int vte_dyn_has_symbol(const char *name) {
     if (!name || !*name) return 0;
     if (!vte_libok()) return 0;
-    return get_sym(vte_handle_lib, name) != NULL;
+    return vte_get_sym(vte_handle_lib, name) != NULL;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                \
+#define VTE_WRAP_RET(ret, name, params, args, fallback)                \
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
         if (!vte_libok()) return fallback;                         \
-        *(void **)(&fn) = get_sym(vte_handle_lib, #name);          \
+        *(void **)(&fn) = vte_get_sym(vte_handle_lib, #name);          \
         if (!fn) {                                                 \
             fprintf(stderr, "vte_dyn: dlsym failed: %s\n",         \
                     #name);                                        \
@@ -542,12 +542,12 @@ ret name params {                                                  \
     return fn args;                                                \
 }
 
-#define WRAP_VOID(name, params, args)                              \
+#define VTE_WRAP_VOID(name, params, args)                              \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
         if (!vte_libok()) return;                                  \
-        *(void **)(&fn) = get_sym(vte_handle_lib, #name);          \
+        *(void **)(&fn) = vte_get_sym(vte_handle_lib, #name);          \
         if (!fn) {                                                 \
             fprintf(stderr, "vte_dyn: dlsym failed: %s\n",         \
                     #name);                                        \
@@ -560,24 +560,24 @@ void name params {                                                 \
 /* ============================================================
  * VTE 全局 / 版本
  * ============================================================ */
-WRAP_RET(guint, vte_get_major_version, (void), (), 0)
-WRAP_RET(guint, vte_get_minor_version, (void), (), 0)
-WRAP_RET(guint, vte_get_micro_version, (void), (), 0)
-WRAP_RET(const char *, vte_get_features, (void), (), NULL)
-WRAP_RET(int, vte_get_feature_flags, (void), (), 0)
-WRAP_RET(char *, vte_get_user_shell, (void), (), NULL)
+VTE_WRAP_RET(guint, vte_get_major_version, (void), (), 0)
+VTE_WRAP_RET(guint, vte_get_minor_version, (void), (), 0)
+VTE_WRAP_RET(guint, vte_get_micro_version, (void), (), 0)
+VTE_WRAP_RET(const char *, vte_get_features, (void), (), NULL)
+VTE_WRAP_RET(int, vte_get_feature_flags, (void), (), 0)
+VTE_WRAP_RET(char *, vte_get_user_shell, (void), (), NULL)
 
 /* ============================================================
  * Terminal：生命周期 / IO
  * ============================================================ */
-WRAP_RET(GtkWidget *, vte_terminal_new, (void), (), NULL)
-WRAP_RET(GType, vte_terminal_get_type, (void), (), 0)
-WRAP_VOID(vte_terminal_reset,
+VTE_WRAP_RET(GtkWidget *, vte_terminal_new, (void), (), NULL)
+VTE_WRAP_RET(GType, vte_terminal_get_type, (void), (), 0)
+VTE_WRAP_VOID(vte_terminal_reset,
           (VteTerminal *terminal, gboolean clear_tabstops,
            gboolean clear_history),
           (terminal, clear_tabstops, clear_history))
 
-WRAP_VOID(vte_terminal_spawn_async,
+VTE_WRAP_VOID(vte_terminal_spawn_async,
           (VteTerminal *terminal, int pty_flags,
            const char *working_directory, char **argv, char **envv,
            int spawn_flags, GSpawnChildSetupFunc child_setup,
@@ -589,7 +589,7 @@ WRAP_VOID(vte_terminal_spawn_async,
            spawn_flags, child_setup, child_setup_data,
            child_setup_data_destroy, timeout, cancellable,
            callback, user_data))
-WRAP_RET(gboolean, vte_terminal_spawn_sync,
+VTE_WRAP_RET(gboolean, vte_terminal_spawn_sync,
          (VteTerminal *terminal, int pty_flags,
           const char *working_directory, char **argv, char **envv,
           int spawn_flags, GSpawnChildSetupFunc child_setup,
@@ -598,229 +598,229 @@ WRAP_RET(gboolean, vte_terminal_spawn_sync,
          (terminal, pty_flags, working_directory, argv, envv,
           spawn_flags, child_setup, child_setup_data, child_pid,
           cancellable, error), 0)
-WRAP_VOID(vte_terminal_watch_child,
+VTE_WRAP_VOID(vte_terminal_watch_child,
           (VteTerminal *terminal, GPid child_pid),
           (terminal, child_pid))
 
-WRAP_VOID(vte_terminal_feed,
+VTE_WRAP_VOID(vte_terminal_feed,
           (VteTerminal *terminal, const char *data, gssize length),
           (terminal, data, length))
-WRAP_VOID(vte_terminal_feed_child,
+VTE_WRAP_VOID(vte_terminal_feed_child,
           (VteTerminal *terminal, const char *data, gssize length),
           (terminal, data, length))
-WRAP_VOID(vte_terminal_feed_child_binary,
+VTE_WRAP_VOID(vte_terminal_feed_child_binary,
           (VteTerminal *terminal, const unsigned char *data, gsize length),
           (terminal, data, length))
 
-WRAP_VOID(vte_terminal_set_pty,
+VTE_WRAP_VOID(vte_terminal_set_pty,
           (VteTerminal *terminal, VtePty *pty), (terminal, pty))
-WRAP_RET(VtePty *, vte_terminal_get_pty, (VteTerminal *terminal),
+VTE_WRAP_RET(VtePty *, vte_terminal_get_pty, (VteTerminal *terminal),
          (terminal), NULL)
-WRAP_RET(gboolean, vte_terminal_write_contents_sync,
+VTE_WRAP_RET(gboolean, vte_terminal_write_contents_sync,
          (VteTerminal *terminal, GOutputStream *stream, int flags,
           GCancellable *cancellable, GError **error),
          (terminal, stream, flags, cancellable, error), 0)
 
-WRAP_RET(const char *, vte_terminal_get_current_directory_uri,
+VTE_WRAP_RET(const char *, vte_terminal_get_current_directory_uri,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_RET(const char *, vte_terminal_get_current_file_uri,
+VTE_WRAP_RET(const char *, vte_terminal_get_current_file_uri,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_RET(const char *, vte_terminal_get_icon_title,
+VTE_WRAP_RET(const char *, vte_terminal_get_icon_title,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_RET(const char *, vte_terminal_get_window_title,
+VTE_WRAP_RET(const char *, vte_terminal_get_window_title,
          (VteTerminal *terminal), (terminal), NULL)
 
-WRAP_RET(glong, vte_terminal_get_column_count,
+VTE_WRAP_RET(glong, vte_terminal_get_column_count,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_RET(glong, vte_terminal_get_row_count,
+VTE_WRAP_RET(glong, vte_terminal_get_row_count,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_VOID(vte_terminal_set_size,
+VTE_WRAP_VOID(vte_terminal_set_size,
           (VteTerminal *terminal, glong columns, glong rows),
           (terminal, columns, rows))
-WRAP_RET(glong, vte_terminal_get_char_width,
+VTE_WRAP_RET(glong, vte_terminal_get_char_width,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_RET(glong, vte_terminal_get_char_height,
+VTE_WRAP_RET(glong, vte_terminal_get_char_height,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_VOID(vte_terminal_get_cursor_position,
+VTE_WRAP_VOID(vte_terminal_get_cursor_position,
           (VteTerminal *terminal, glong *column, glong *row),
           (terminal, column, row))
 
 /* ============================================================
  * Terminal：外观 / 选项
  * ============================================================ */
-WRAP_VOID(vte_terminal_set_font,
+VTE_WRAP_VOID(vte_terminal_set_font,
           (VteTerminal *terminal, const PangoFontDescription *font_desc),
           (terminal, font_desc))
-WRAP_RET(const PangoFontDescription *, vte_terminal_get_font,
+VTE_WRAP_RET(const PangoFontDescription *, vte_terminal_get_font,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_VOID(vte_terminal_set_font_scale,
+VTE_WRAP_VOID(vte_terminal_set_font_scale,
           (VteTerminal *terminal, gdouble scale), (terminal, scale))
-WRAP_RET(gdouble, vte_terminal_get_font_scale,
+VTE_WRAP_RET(gdouble, vte_terminal_get_font_scale,
          (VteTerminal *terminal), (terminal), 0.0)
 
-WRAP_VOID(vte_terminal_set_colors,
+VTE_WRAP_VOID(vte_terminal_set_colors,
           (VteTerminal *terminal, const VteDynRGBA *foreground,
            const VteDynRGBA *background, const VteDynRGBA *palette,
            gsize palette_size),
           (terminal, foreground, background, palette, palette_size))
-WRAP_VOID(vte_terminal_set_default_colors,
+VTE_WRAP_VOID(vte_terminal_set_default_colors,
           (VteTerminal *terminal), (terminal))
-WRAP_VOID(vte_terminal_set_color_background,
+VTE_WRAP_VOID(vte_terminal_set_color_background,
           (VteTerminal *terminal, const VteDynRGBA *background),
           (terminal, background))
-WRAP_VOID(vte_terminal_set_color_foreground,
+VTE_WRAP_VOID(vte_terminal_set_color_foreground,
           (VteTerminal *terminal, const VteDynRGBA *foreground),
           (terminal, foreground))
-WRAP_VOID(vte_terminal_set_color_bold,
+VTE_WRAP_VOID(vte_terminal_set_color_bold,
           (VteTerminal *terminal, const VteDynRGBA *bold),
           (terminal, bold))
-WRAP_VOID(vte_terminal_set_color_cursor,
+VTE_WRAP_VOID(vte_terminal_set_color_cursor,
           (VteTerminal *terminal, const VteDynRGBA *cursor_background),
           (terminal, cursor_background))
-WRAP_VOID(vte_terminal_set_color_cursor_foreground,
+VTE_WRAP_VOID(vte_terminal_set_color_cursor_foreground,
           (VteTerminal *terminal, const VteDynRGBA *cursor_foreground),
           (terminal, cursor_foreground))
-WRAP_VOID(vte_terminal_set_color_highlight,
+VTE_WRAP_VOID(vte_terminal_set_color_highlight,
           (VteTerminal *terminal, const VteDynRGBA *highlight_background),
           (terminal, highlight_background))
-WRAP_VOID(vte_terminal_set_color_highlight_foreground,
+VTE_WRAP_VOID(vte_terminal_set_color_highlight_foreground,
           (VteTerminal *terminal, const VteDynRGBA *highlight_foreground),
           (terminal, highlight_foreground))
 
-WRAP_VOID(vte_terminal_set_scrollback_lines,
+VTE_WRAP_VOID(vte_terminal_set_scrollback_lines,
           (VteTerminal *terminal, glong lines), (terminal, lines))
-WRAP_RET(glong, vte_terminal_get_scrollback_lines,
+VTE_WRAP_RET(glong, vte_terminal_get_scrollback_lines,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_VOID(vte_terminal_set_scroll_on_output,
+VTE_WRAP_VOID(vte_terminal_set_scroll_on_output,
           (VteTerminal *terminal, gboolean scroll), (terminal, scroll))
-WRAP_RET(gboolean, vte_terminal_get_scroll_on_output,
+VTE_WRAP_RET(gboolean, vte_terminal_get_scroll_on_output,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_scroll_on_keystroke,
+VTE_WRAP_VOID(vte_terminal_set_scroll_on_keystroke,
           (VteTerminal *terminal, gboolean scroll), (terminal, scroll))
-WRAP_RET(gboolean, vte_terminal_get_scroll_on_keystroke,
+VTE_WRAP_RET(gboolean, vte_terminal_get_scroll_on_keystroke,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_mouse_autohide,
+VTE_WRAP_VOID(vte_terminal_set_mouse_autohide,
           (VteTerminal *terminal, gboolean setting), (terminal, setting))
-WRAP_RET(gboolean, vte_terminal_get_mouse_autohide,
+VTE_WRAP_RET(gboolean, vte_terminal_get_mouse_autohide,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_allow_bold,
+VTE_WRAP_VOID(vte_terminal_set_allow_bold,
           (VteTerminal *terminal, gboolean allow_bold),
           (terminal, allow_bold))
-WRAP_RET(gboolean, vte_terminal_get_allow_bold,
+VTE_WRAP_RET(gboolean, vte_terminal_get_allow_bold,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_allow_hyperlink,
+VTE_WRAP_VOID(vte_terminal_set_allow_hyperlink,
           (VteTerminal *terminal, gboolean allow_hyperlink),
           (terminal, allow_hyperlink))
-WRAP_RET(gboolean, vte_terminal_get_allow_hyperlink,
+VTE_WRAP_RET(gboolean, vte_terminal_get_allow_hyperlink,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_input_enabled,
+VTE_WRAP_VOID(vte_terminal_set_input_enabled,
           (VteTerminal *terminal, gboolean enabled), (terminal, enabled))
-WRAP_RET(gboolean, vte_terminal_get_input_enabled,
+VTE_WRAP_RET(gboolean, vte_terminal_get_input_enabled,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_RET(gboolean, vte_terminal_set_encoding,
+VTE_WRAP_RET(gboolean, vte_terminal_set_encoding,
          (VteTerminal *terminal, const char *codeset, GError **error),
          (terminal, codeset, error), 0)
-WRAP_RET(const char *, vte_terminal_get_encoding,
+VTE_WRAP_RET(const char *, vte_terminal_get_encoding,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_VOID(vte_terminal_set_word_char_exceptions,
+VTE_WRAP_VOID(vte_terminal_set_word_char_exceptions,
           (VteTerminal *terminal, const char *exceptions),
           (terminal, exceptions))
-WRAP_RET(const char *, vte_terminal_get_word_char_exceptions,
+VTE_WRAP_RET(const char *, vte_terminal_get_word_char_exceptions,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_VOID(vte_terminal_set_cjk_ambiguous_width,
+VTE_WRAP_VOID(vte_terminal_set_cjk_ambiguous_width,
           (VteTerminal *terminal, int width), (terminal, width))
-WRAP_RET(int, vte_terminal_get_cjk_ambiguous_width,
+VTE_WRAP_RET(int, vte_terminal_get_cjk_ambiguous_width,
          (VteTerminal *terminal), (terminal), -1)
-WRAP_VOID(vte_terminal_set_cursor_blink_mode,
+VTE_WRAP_VOID(vte_terminal_set_cursor_blink_mode,
           (VteTerminal *terminal, int mode), (terminal, mode))
-WRAP_RET(int, vte_terminal_get_cursor_blink_mode,
+VTE_WRAP_RET(int, vte_terminal_get_cursor_blink_mode,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_set_cursor_shape,
+VTE_WRAP_VOID(vte_terminal_set_cursor_shape,
           (VteTerminal *terminal, int shape), (terminal, shape))
-WRAP_RET(int, vte_terminal_get_cursor_shape,
+VTE_WRAP_RET(int, vte_terminal_get_cursor_shape,
          (VteTerminal *terminal), (terminal), 0)
 
 /* ============================================================
  * Terminal：选择 / 剪贴板 / 文本
  * ============================================================ */
-WRAP_VOID(vte_terminal_select_all, (VteTerminal *terminal), (terminal))
-WRAP_VOID(vte_terminal_unselect_all, (VteTerminal *terminal), (terminal))
-WRAP_RET(gboolean, vte_terminal_get_has_selection,
+VTE_WRAP_VOID(vte_terminal_select_all, (VteTerminal *terminal), (terminal))
+VTE_WRAP_VOID(vte_terminal_unselect_all, (VteTerminal *terminal), (terminal))
+VTE_WRAP_RET(gboolean, vte_terminal_get_has_selection,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_VOID(vte_terminal_copy_clipboard,
+VTE_WRAP_VOID(vte_terminal_copy_clipboard,
           (VteTerminal *terminal), (terminal))
-WRAP_VOID(vte_terminal_copy_clipboard_format,
+VTE_WRAP_VOID(vte_terminal_copy_clipboard_format,
           (VteTerminal *terminal, int format), (terminal, format))
-WRAP_VOID(vte_terminal_paste_clipboard,
+VTE_WRAP_VOID(vte_terminal_paste_clipboard,
           (VteTerminal *terminal), (terminal))
 
-WRAP_RET(char *, vte_terminal_get_text_format,
+VTE_WRAP_RET(char *, vte_terminal_get_text_format,
          (VteTerminal *terminal, int format), (terminal, format), NULL)
-WRAP_RET(char *, vte_terminal_get_text_range_format,
+VTE_WRAP_RET(char *, vte_terminal_get_text_range_format,
          (VteTerminal *terminal, int format,
           long start_row, long start_col, long end_row, long end_col,
           gsize *length),
          (terminal, format, start_row, start_col, end_row, end_col,
           length), NULL)
-WRAP_RET(char *, vte_terminal_get_text_selected,
+VTE_WRAP_RET(char *, vte_terminal_get_text_selected,
          (VteTerminal *terminal, int format), (terminal, format), NULL)
-WRAP_RET(char *, vte_terminal_get_text_selected_full,
+VTE_WRAP_RET(char *, vte_terminal_get_text_selected_full,
          (VteTerminal *terminal, int format, gsize *length),
          (terminal, format, length), NULL)
 
 /* ============================================================
  * Terminal：搜索 / 匹配
  * ============================================================ */
-WRAP_VOID(vte_terminal_search_set_regex,
+VTE_WRAP_VOID(vte_terminal_search_set_regex,
           (VteTerminal *terminal, VteRegex *regex, guint32 flags),
           (terminal, regex, flags))
-WRAP_RET(VteRegex *, vte_terminal_search_get_regex,
+VTE_WRAP_RET(VteRegex *, vte_terminal_search_get_regex,
          (VteTerminal *terminal), (terminal), NULL)
-WRAP_VOID(vte_terminal_search_set_wrap_around,
+VTE_WRAP_VOID(vte_terminal_search_set_wrap_around,
           (VteTerminal *terminal, gboolean wrap_around),
           (terminal, wrap_around))
-WRAP_RET(gboolean, vte_terminal_search_get_wrap_around,
+VTE_WRAP_RET(gboolean, vte_terminal_search_get_wrap_around,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_RET(gboolean, vte_terminal_search_find_next,
+VTE_WRAP_RET(gboolean, vte_terminal_search_find_next,
          (VteTerminal *terminal), (terminal), 0)
-WRAP_RET(gboolean, vte_terminal_search_find_previous,
+VTE_WRAP_RET(gboolean, vte_terminal_search_find_previous,
          (VteTerminal *terminal), (terminal), 0)
 
-WRAP_RET(int, vte_terminal_match_add_regex,
+VTE_WRAP_RET(int, vte_terminal_match_add_regex,
          (VteTerminal *terminal, VteRegex *regex, guint32 flags),
          (terminal, regex, flags), -1)
-WRAP_VOID(vte_terminal_match_remove,
+VTE_WRAP_VOID(vte_terminal_match_remove,
           (VteTerminal *terminal, int tag), (terminal, tag))
-WRAP_VOID(vte_terminal_match_remove_all,
+VTE_WRAP_VOID(vte_terminal_match_remove_all,
           (VteTerminal *terminal), (terminal))
-WRAP_VOID(vte_terminal_match_set_cursor_name,
+VTE_WRAP_VOID(vte_terminal_match_set_cursor_name,
           (VteTerminal *terminal, int tag, const char *cursor_name),
           (terminal, tag, cursor_name))
 
 /* GTK3 专属（GTK4 上 dlsym 失败，安全降级） */
-WRAP_RET(char *, vte_terminal_hyperlink_check_event,
+VTE_WRAP_RET(char *, vte_terminal_hyperlink_check_event,
          (VteTerminal *terminal, GdkEvent *event),
          (terminal, event), NULL)
-WRAP_RET(char *, vte_terminal_match_check_event,
+VTE_WRAP_RET(char *, vte_terminal_match_check_event,
          (VteTerminal *terminal, GdkEvent *event, int *tag),
          (terminal, event, tag), NULL)
-WRAP_RET(int, vte_terminal_match_add_gregex,
+VTE_WRAP_RET(int, vte_terminal_match_add_gregex,
          (VteTerminal *terminal, GRegex *gregex, int gflags),
          (terminal, gregex, gflags), -1)
-WRAP_RET(gboolean, vte_terminal_event_check_regex_simple,
+VTE_WRAP_RET(gboolean, vte_terminal_event_check_regex_simple,
          (VteTerminal *terminal, GdkEvent *event,
           VteRegex **regexes, gsize n_regexes,
           guint32 match_flags, char **matches),
          (terminal, event, regexes, n_regexes, match_flags, matches), 0)
 
 /* GTK4 专属（GTK3 上 dlsym 失败，安全降级） */
-WRAP_RET(char *, vte_terminal_check_hyperlink_at,
+VTE_WRAP_RET(char *, vte_terminal_check_hyperlink_at,
          (VteTerminal *terminal, double x, double y),
          (terminal, x, y), NULL)
-WRAP_RET(char *, vte_terminal_check_match_at,
+VTE_WRAP_RET(char *, vte_terminal_check_match_at,
          (VteTerminal *terminal, double x, double y, int *tag),
          (terminal, x, y, tag), NULL)
-WRAP_RET(gboolean, vte_terminal_check_regex_simple_at,
+VTE_WRAP_RET(gboolean, vte_terminal_check_regex_simple_at,
          (VteTerminal *terminal, double x, double y,
           VteRegex **regexes, gsize n_regexes,
           guint32 match_flags, char **matches),
@@ -829,44 +829,44 @@ WRAP_RET(gboolean, vte_terminal_check_regex_simple_at,
 /* ============================================================
  * PTY
  * ============================================================ */
-WRAP_RET(GType, vte_pty_get_type, (void), (), 0)
-WRAP_RET(VtePty *, vte_pty_new_sync,
+VTE_WRAP_RET(GType, vte_pty_get_type, (void), (), 0)
+VTE_WRAP_RET(VtePty *, vte_pty_new_sync,
          (int flags, GCancellable *cancellable, GError **error),
          (flags, cancellable, error), NULL)
-WRAP_RET(VtePty *, vte_pty_new_foreign_sync,
+VTE_WRAP_RET(VtePty *, vte_pty_new_foreign_sync,
          (int fd, GCancellable *cancellable, GError **error),
          (fd, cancellable, error), NULL)
-WRAP_RET(int, vte_pty_get_fd, (VtePty *pty), (pty), -1)
-WRAP_VOID(vte_pty_child_setup, (VtePty *pty), (pty))
-WRAP_RET(gboolean, vte_pty_get_size,
+VTE_WRAP_RET(int, vte_pty_get_fd, (VtePty *pty), (pty), -1)
+VTE_WRAP_VOID(vte_pty_child_setup, (VtePty *pty), (pty))
+VTE_WRAP_RET(gboolean, vte_pty_get_size,
          (VtePty *pty, int *rows, int *columns, GError **error),
          (pty, rows, columns, error), 0)
-WRAP_RET(gboolean, vte_pty_set_size,
+VTE_WRAP_RET(gboolean, vte_pty_set_size,
          (VtePty *pty, int rows, int columns, GError **error),
          (pty, rows, columns, error), 0)
-WRAP_RET(gboolean, vte_pty_set_utf8,
+VTE_WRAP_RET(gboolean, vte_pty_set_utf8,
          (VtePty *pty, gboolean utf8, GError **error),
          (pty, utf8, error), 0)
-WRAP_VOID(vte_pty_close, (VtePty *pty), (pty))
+VTE_WRAP_VOID(vte_pty_close, (VtePty *pty), (pty))
 
 /* ============================================================
  * Regex
  * ============================================================ */
-WRAP_RET(GType, vte_regex_get_type, (void), (), 0)
-WRAP_RET(VteRegex *, vte_regex_new_for_match,
+VTE_WRAP_RET(GType, vte_regex_get_type, (void), (), 0)
+VTE_WRAP_RET(VteRegex *, vte_regex_new_for_match,
          (const char *pattern, gssize pattern_length,
           guint32 flags, GError **error),
          (pattern, pattern_length, flags, error), NULL)
-WRAP_RET(VteRegex *, vte_regex_new_for_search,
+VTE_WRAP_RET(VteRegex *, vte_regex_new_for_search,
          (const char *pattern, gssize pattern_length,
           guint32 flags, GError **error),
          (pattern, pattern_length, flags, error), NULL)
-WRAP_RET(VteRegex *, vte_regex_ref, (VteRegex *regex), (regex), NULL)
-WRAP_RET(VteRegex *, vte_regex_unref, (VteRegex *regex), (regex), NULL)
-WRAP_RET(gboolean, vte_regex_jit,
+VTE_WRAP_RET(VteRegex *, vte_regex_ref, (VteRegex *regex), (regex), NULL)
+VTE_WRAP_RET(VteRegex *, vte_regex_unref, (VteRegex *regex), (regex), NULL)
+VTE_WRAP_RET(gboolean, vte_regex_jit,
          (VteRegex *regex, guint32 flags, GError **error),
          (regex, flags, error), 0)
-WRAP_RET(char *, vte_regex_substitute,
+VTE_WRAP_RET(char *, vte_regex_substitute,
          (VteRegex *regex, const char *subject, const char *replacement,
           guint32 flags, GError **error),
          (regex, subject, replacement, flags, error), NULL)

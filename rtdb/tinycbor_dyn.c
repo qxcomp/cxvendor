@@ -30,20 +30,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE tinycbor_lib_handle_t;
+  static tinycbor_lib_handle_t tinycbor_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *tinycbor_get_sym(tinycbor_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void tinycbor_free_lib(tinycbor_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *tinycbor_lib_error(void) { return "LoadLibrary failed"; }
+  #define TINYCBOR_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *tinycbor_lib_handle_t;
+  static tinycbor_lib_handle_t tinycbor_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *tinycbor_get_sym(tinycbor_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void tinycbor_free_lib(tinycbor_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *tinycbor_lib_error(void) { return dlerror(); }
+  #define TINYCBOR_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -268,11 +268,11 @@ enum CborToJsonFlags {
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t tinycbor_handle = NULL;
+static tinycbor_lib_handle_t tinycbor_handle = NULL;
 static int tinycbor_init_state = 0;
 
 static void *tinycbor_sym(const char *name) {
-    return tinycbor_handle ? get_sym(tinycbor_handle, name) : NULL;
+    return tinycbor_handle ? tinycbor_get_sym(tinycbor_handle, name) : NULL;
 }
 
 static int tinycbor_do_load(const char *library_path) {
@@ -311,7 +311,7 @@ static int tinycbor_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, TINYCBOR_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q && n + 4 < 96) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -362,13 +362,13 @@ static int tinycbor_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        tinycbor_handle = load_lib(candidates[i]);
+        tinycbor_handle = tinycbor_load_lib(candidates[i]);
         // printf("try %d %s\n", i, candidates[i]);
         if (tinycbor_handle) { res = i; break; }
     }
     if (!tinycbor_handle || !tinycbor_sym("cbor_parser_init")) {
-        fprintf(stderr, "tinycbor_dyn: cannot load tinycbor (%s)\n", lib_error());
-        if (tinycbor_handle) { free_lib(tinycbor_handle); tinycbor_handle = NULL; }
+        fprintf(stderr, "tinycbor_dyn: cannot load tinycbor (%s)\n", tinycbor_lib_error());
+        if (tinycbor_handle) { tinycbor_free_lib(tinycbor_handle); tinycbor_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "tinycbor_dyn: loaded %d %s\n", res, candidates[res]);
@@ -391,7 +391,7 @@ int tinycbor_dyn_init(const char *library_path) {
 }
 
 void tinycbor_dyn_cleanup(void) {
-    if (tinycbor_handle) { free_lib(tinycbor_handle); tinycbor_handle = NULL; }
+    if (tinycbor_handle) { tinycbor_free_lib(tinycbor_handle); tinycbor_handle = NULL; }
     tinycbor_init_state = 0;
 }
 
@@ -403,7 +403,7 @@ int tinycbor_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define TINYCBOR_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -416,7 +416,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define TINYCBOR_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -431,40 +431,40 @@ void name params {                                                             \
 }
 
 /* ---------- 37 个 CBOR_API 公开函数（函数名原样） ---------- */
-WRAP_RET(CborError, cbor_encode_byte_string, (CborEncoder *encoder, const uint8_t *string, size_t length), (encoder, string, length), CborNoError)
-WRAP_RET(CborError, cbor_encode_float_as_half_float, (CborEncoder *encoder, float value), (encoder, value), CborNoError)
-WRAP_RET(CborError, cbor_encode_floating_point, (CborEncoder *encoder, CborType fpType, const void *value), (encoder, fpType, value), CborNoError)
-WRAP_RET(CborError, cbor_encode_int, (CborEncoder *encoder, int64_t value), (encoder, value), CborNoError)
-WRAP_RET(CborError, cbor_encode_negative_int, (CborEncoder *encoder, uint64_t absolute_value), (encoder, absolute_value), CborNoError)
-WRAP_RET(CborError, cbor_encode_raw, (CborEncoder *encoder, const uint8_t *raw, size_t length), (encoder, raw, length), CborNoError)
-WRAP_RET(CborError, cbor_encoder_close_container, (CborEncoder *parentEncoder, const CborEncoder *containerEncoder), (parentEncoder, containerEncoder), CborNoError)
-WRAP_RET(CborError, cbor_encoder_close_container_checked, (CborEncoder *parentEncoder, const CborEncoder *containerEncoder), (parentEncoder, containerEncoder), CborNoError)
-WRAP_RET(CborError, cbor_encoder_create_array, (CborEncoder *parentEncoder, CborEncoder *arrayEncoder, size_t length), (parentEncoder, arrayEncoder, length), CborNoError)
-WRAP_RET(CborError, cbor_encoder_create_map, (CborEncoder *parentEncoder, CborEncoder *mapEncoder, size_t length), (parentEncoder, mapEncoder, length), CborNoError)
-WRAP_VOID(cbor_encoder_init, (CborEncoder *encoder, uint8_t *buffer, size_t size, int flags), (encoder, buffer, size, flags))
-WRAP_VOID(cbor_encoder_init_writer, (CborEncoder *encoder, CborEncoderWriteFunction writer, void *token), (encoder, writer, token))
-WRAP_RET(CborError, cbor_encode_simple_value, (CborEncoder *encoder, uint8_t value), (encoder, value), CborNoError)
-WRAP_RET(CborError, cbor_encode_tag, (CborEncoder *encoder, CborTag tag), (encoder, tag), CborNoError)
-WRAP_RET(CborError, cbor_encode_text_string, (CborEncoder *encoder, const char *string, size_t length), (encoder, string, length), CborNoError)
-WRAP_RET(CborError, cbor_encode_uint, (CborEncoder *encoder, uint64_t value), (encoder, value), CborNoError)
-WRAP_RET(const char *, cbor_error_string, (CborError error), (error), NULL)
-WRAP_RET(CborError, cbor_parser_init, (const uint8_t *buffer, size_t size, uint32_t flags, CborParser *parser, CborValue *it), (buffer, size, flags, parser, it), CborNoError)
-WRAP_RET(CborError, cbor_parser_init_reader, (const struct CborParserOperations *ops, CborParser *parser, CborValue *it, void *token), (ops, parser, it, token), CborNoError)
-WRAP_RET(CborError, cbor_value_advance, (CborValue *it), (it), CborNoError)
-WRAP_RET(CborError, cbor_value_advance_fixed, (CborValue *it), (it), CborNoError)
-WRAP_RET(CborError, cbor_value_calculate_string_length, (const CborValue *value, size_t *length), (value, length), CborNoError)
-WRAP_RET(CborError, cbor_value_enter_container, (const CborValue *it, CborValue *recursed), (it, recursed), CborNoError)
-WRAP_RET(CborError, cbor_value_get_half_float_as_float, (const CborValue *value, float *result), (value, result), CborNoError)
-WRAP_RET(CborError, cbor_value_get_int64_checked, (const CborValue *value, int64_t *result), (value, result), CborNoError)
-WRAP_RET(CborError, cbor_value_get_int_checked, (const CborValue *value, int *result), (value, result), CborNoError)
-WRAP_RET(CborError, cbor_value_leave_container, (CborValue *it, const CborValue *recursed), (it, recursed), CborNoError)
-WRAP_RET(CborError, cbor_value_map_find_value, (const CborValue *map, const char *string, CborValue *element), (map, string, element), CborNoError)
-WRAP_RET(CborError, cbor_value_reparse, (CborValue *it), (it), CborNoError)
-WRAP_RET(CborError, cbor_value_skip_tag, (CborValue *it), (it), CborNoError)
-WRAP_RET(CborError, cbor_value_text_string_equals, (const CborValue *value, const char *string, bool *result), (value, string, result), CborNoError)
-WRAP_RET(CborError, cbor_value_to_json_advance, (FILE *out, CborValue *value, int flags), (out, value, flags), CborNoError)
-WRAP_RET(CborError, cbor_value_to_pretty_advance, (FILE *out, CborValue *value), (out, value), CborNoError)
-WRAP_RET(CborError, cbor_value_to_pretty_advance_flags, (FILE *out, CborValue *value, int flags), (out, value, flags), CborNoError)
-WRAP_RET(CborError, cbor_value_to_pretty_stream, (CborStreamFunction streamFunction, void *token, CborValue *value, int flags), (streamFunction, token, value, flags), CborNoError)
-WRAP_RET(CborError, cbor_value_validate, (const CborValue *it, uint32_t flags), (it, flags), CborNoError)
-WRAP_RET(CborError, cbor_value_validate_basic, (const CborValue *it), (it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_byte_string, (CborEncoder *encoder, const uint8_t *string, size_t length), (encoder, string, length), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_float_as_half_float, (CborEncoder *encoder, float value), (encoder, value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_floating_point, (CborEncoder *encoder, CborType fpType, const void *value), (encoder, fpType, value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_int, (CborEncoder *encoder, int64_t value), (encoder, value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_negative_int, (CborEncoder *encoder, uint64_t absolute_value), (encoder, absolute_value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_raw, (CborEncoder *encoder, const uint8_t *raw, size_t length), (encoder, raw, length), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encoder_close_container, (CborEncoder *parentEncoder, const CborEncoder *containerEncoder), (parentEncoder, containerEncoder), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encoder_close_container_checked, (CborEncoder *parentEncoder, const CborEncoder *containerEncoder), (parentEncoder, containerEncoder), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encoder_create_array, (CborEncoder *parentEncoder, CborEncoder *arrayEncoder, size_t length), (parentEncoder, arrayEncoder, length), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encoder_create_map, (CborEncoder *parentEncoder, CborEncoder *mapEncoder, size_t length), (parentEncoder, mapEncoder, length), CborNoError)
+TINYCBOR_WRAP_VOID(cbor_encoder_init, (CborEncoder *encoder, uint8_t *buffer, size_t size, int flags), (encoder, buffer, size, flags))
+TINYCBOR_WRAP_VOID(cbor_encoder_init_writer, (CborEncoder *encoder, CborEncoderWriteFunction writer, void *token), (encoder, writer, token))
+TINYCBOR_WRAP_RET(CborError, cbor_encode_simple_value, (CborEncoder *encoder, uint8_t value), (encoder, value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_tag, (CborEncoder *encoder, CborTag tag), (encoder, tag), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_text_string, (CborEncoder *encoder, const char *string, size_t length), (encoder, string, length), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_encode_uint, (CborEncoder *encoder, uint64_t value), (encoder, value), CborNoError)
+TINYCBOR_WRAP_RET(const char *, cbor_error_string, (CborError error), (error), NULL)
+TINYCBOR_WRAP_RET(CborError, cbor_parser_init, (const uint8_t *buffer, size_t size, uint32_t flags, CborParser *parser, CborValue *it), (buffer, size, flags, parser, it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_parser_init_reader, (const struct CborParserOperations *ops, CborParser *parser, CborValue *it, void *token), (ops, parser, it, token), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_advance, (CborValue *it), (it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_advance_fixed, (CborValue *it), (it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_calculate_string_length, (const CborValue *value, size_t *length), (value, length), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_enter_container, (const CborValue *it, CborValue *recursed), (it, recursed), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_get_half_float_as_float, (const CborValue *value, float *result), (value, result), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_get_int64_checked, (const CborValue *value, int64_t *result), (value, result), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_get_int_checked, (const CborValue *value, int *result), (value, result), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_leave_container, (CborValue *it, const CborValue *recursed), (it, recursed), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_map_find_value, (const CborValue *map, const char *string, CborValue *element), (map, string, element), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_reparse, (CborValue *it), (it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_skip_tag, (CborValue *it), (it), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_text_string_equals, (const CborValue *value, const char *string, bool *result), (value, string, result), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_to_json_advance, (FILE *out, CborValue *value, int flags), (out, value, flags), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_to_pretty_advance, (FILE *out, CborValue *value), (out, value), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_to_pretty_advance_flags, (FILE *out, CborValue *value, int flags), (out, value, flags), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_to_pretty_stream, (CborStreamFunction streamFunction, void *token, CborValue *value, int flags), (streamFunction, token, value, flags), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_validate, (const CborValue *it, uint32_t flags), (it, flags), CborNoError)
+TINYCBOR_WRAP_RET(CborError, cbor_value_validate_basic, (const CborValue *it), (it), CborNoError)

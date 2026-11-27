@@ -38,20 +38,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE gumbo_lib_handle_t;
+  static gumbo_lib_handle_t gumbo_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *gumbo_get_sym(gumbo_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void gumbo_free_lib(gumbo_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *gumbo_lib_error(void) { return "LoadLibrary failed"; }
+  #define GUMBO_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *gumbo_lib_handle_t;
+  static gumbo_lib_handle_t gumbo_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *gumbo_get_sym(gumbo_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void gumbo_free_lib(gumbo_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *gumbo_lib_error(void) { return dlerror(); }
+  #define GUMBO_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -259,15 +259,15 @@ typedef struct GumboInternalOutput {
 /* ============================================================
  * 动态加载（单库，多候选路径）
  * ============================================================ */
-static lib_handle_t gumbo_handle = NULL;
+static gumbo_lib_handle_t gumbo_handle = NULL;
 static int gumbo_init_state = 0;
 
 static void *gumbo_sym(const char *name) {
-    return gumbo_handle ? get_sym(gumbo_handle, name) : NULL;
+    return gumbo_handle ? gumbo_get_sym(gumbo_handle, name) : NULL;
 }
 
 /* 尝试加载单个库：显式路径、环境变量、LD 目录、soname、.so、Nix、默认路径 */
-static lib_handle_t gumbo_load_one(const char *library_path,
+static gumbo_lib_handle_t gumbo_load_one(const char *library_path,
                                    const char *so_soname,
                                    const char *so_plain,
                                    const char *probe_symbol,
@@ -276,7 +276,7 @@ static lib_handle_t gumbo_load_one(const char *library_path,
     static char bufs[96][1024];
     const char *candidates[96];
     int n = 0, i;
-    lib_handle_t h = NULL;
+    gumbo_lib_handle_t h = NULL;
 
     if (library_path && *library_path) {
         snprintf(bufs[n], sizeof bufs[0], "%s", library_path);
@@ -302,7 +302,7 @@ static lib_handle_t gumbo_load_one(const char *library_path,
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, GUMBO_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -345,13 +345,13 @@ static lib_handle_t gumbo_load_one(const char *library_path,
 #endif
 
     for (i = 0; i < n; i++) {
-        h = load_lib(candidates[i]);
-        if (h && get_sym(h, probe_symbol)) {
+        h = gumbo_load_lib(candidates[i]);
+        if (h && gumbo_get_sym(h, probe_symbol)) {
             if (out_idx) *out_idx = i;
             if (out_path) *out_path = candidates[i];
             break;
         }
-        if (h) { free_lib(h); h = NULL; }
+        if (h) { gumbo_free_lib(h); h = NULL; }
     }
     return h;
 }
@@ -374,7 +374,7 @@ static int gumbo_do_load(const char *library_path) {
                                   "gumbo_parse", "GUMBO_DYN_LIB", &idx, &path);
 #endif
     if (!gumbo_handle) {
-        fprintf(stderr, "gumbo_dyn: cannot load libgumbo (%s)\n", lib_error());
+        fprintf(stderr, "gumbo_dyn: cannot load libgumbo (%s)\n", gumbo_lib_error());
         return -1;
     }
     if (path) { snprintf(path_buf, sizeof path_buf, "%s", path); path = path_buf; }
@@ -398,7 +398,7 @@ int gumbo_dyn_init(const char *library_path) {
 }
 
 void gumbo_dyn_cleanup(void) {
-    if (gumbo_handle) { free_lib(gumbo_handle); gumbo_handle = NULL; }
+    if (gumbo_handle) { gumbo_free_lib(gumbo_handle); gumbo_handle = NULL; }
     gumbo_init_state = 0;
 }
 
@@ -416,7 +416,7 @@ const GumboOptions *gumbo_dyn_default_options(void) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define GUMBO_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -430,7 +430,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define GUMBO_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -448,40 +448,40 @@ void name params {                                                         \
  * 导出函数封装（公开 API：13 个）
  * ============================================================ */
 
-WRAP_RET(bool, gumbo_string_equals,
+GUMBO_WRAP_RET(bool, gumbo_string_equals,
          (const GumboStringPiece *str1, const GumboStringPiece *str2),
          (str1, str2), false)
 
-WRAP_RET(bool, gumbo_string_equals_ignore_case,
+GUMBO_WRAP_RET(bool, gumbo_string_equals_ignore_case,
          (const GumboStringPiece *str1, const GumboStringPiece *str2),
          (str1, str2), false)
 
-WRAP_RET(int, gumbo_vector_index_of,
+GUMBO_WRAP_RET(int, gumbo_vector_index_of,
          (GumboVector *vector, const void *element),
          (vector, element), -1)
 
-WRAP_RET(bool, gumbo_tag_is_void, (GumboTag tag), (tag), false)
+GUMBO_WRAP_RET(bool, gumbo_tag_is_void, (GumboTag tag), (tag), false)
 
-WRAP_RET(const char *, gumbo_normalized_tagname, (GumboTag tag), (tag), NULL)
+GUMBO_WRAP_RET(const char *, gumbo_normalized_tagname, (GumboTag tag), (tag), NULL)
 
-WRAP_VOID(gumbo_tag_from_original_text, (GumboStringPiece *text), (text))
+GUMBO_WRAP_VOID(gumbo_tag_from_original_text, (GumboStringPiece *text), (text))
 
-WRAP_RET(const char *, gumbo_normalize_svg_tagname,
+GUMBO_WRAP_RET(const char *, gumbo_normalize_svg_tagname,
          (const GumboStringPiece *tagname), (tagname), NULL)
 
-WRAP_RET(GumboTag, gumbo_tag_enum, (const char *tagname), (tagname), GUMBO_TAG_UNKNOWN)
+GUMBO_WRAP_RET(GumboTag, gumbo_tag_enum, (const char *tagname), (tagname), GUMBO_TAG_UNKNOWN)
 
-WRAP_RET(GumboTag, gumbo_tagn_enum,
+GUMBO_WRAP_RET(GumboTag, gumbo_tagn_enum,
          (const char *tagname, unsigned int length), (tagname, length), GUMBO_TAG_UNKNOWN)
 
-WRAP_RET(GumboAttribute *, gumbo_get_attribute,
+GUMBO_WRAP_RET(GumboAttribute *, gumbo_get_attribute,
          (const GumboVector *attrs, const char *name), (attrs, name), NULL)
 
-WRAP_RET(GumboOutput *, gumbo_parse, (const char *buffer), (buffer), NULL)
+GUMBO_WRAP_RET(GumboOutput *, gumbo_parse, (const char *buffer), (buffer), NULL)
 
-WRAP_RET(GumboOutput *, gumbo_parse_with_options,
+GUMBO_WRAP_RET(GumboOutput *, gumbo_parse_with_options,
          (const GumboOptions *options, const char *buffer, size_t buffer_length),
          (options, buffer, buffer_length), NULL)
 
-WRAP_VOID(gumbo_destroy_output,
+GUMBO_WRAP_VOID(gumbo_destroy_output,
           (const GumboOptions *options, GumboOutput *output), (options, output))

@@ -29,20 +29,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE gdbm_lib_handle_t;
+ static gdbm_lib_handle_t gdbm_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *gdbm_get_sym(gdbm_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void gdbm_free_lib(gdbm_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *gdbm_lib_error(void) { return "LoadLibrary failed"; }
+ #define GDBM_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *gdbm_lib_handle_t;
+ static gdbm_lib_handle_t gdbm_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *gdbm_get_sym(gdbm_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void gdbm_free_lib(gdbm_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *gdbm_lib_error(void) { return dlerror(); }
+ #define GDBM_PATH_SEP ':'
 #endif
 
 /* ---------- 类型（gdbm.h） ---------- */
@@ -101,11 +101,11 @@ void gdbm_dyn_sync_globals(void);
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t gdbm_handle = NULL;
+static gdbm_lib_handle_t gdbm_handle = NULL;
 static int gdbm_init_state = 0;
 
 static void *gdbm_sym(const char *name) {
-    return gdbm_handle ? get_sym(gdbm_handle, name) : NULL;
+    return gdbm_handle ? gdbm_get_sym(gdbm_handle, name) : NULL;
 }
 
 static int gdbm_do_load(const char *library_path) {
@@ -139,7 +139,7 @@ static int gdbm_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, GDBM_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/libgdbm.so.6", q);
@@ -183,12 +183,12 @@ static int gdbm_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        gdbm_handle = load_lib(candidates[i]);
+        gdbm_handle = gdbm_load_lib(candidates[i]);
         if (gdbm_handle) break;
     }
     if (!gdbm_handle || !gdbm_sym("gdbm_open")) {
-        fprintf(stderr, "gdbm_dyn: cannot load gdbm (%s)\n", lib_error());
-        if (gdbm_handle) { free_lib(gdbm_handle); gdbm_handle = NULL; }
+        fprintf(stderr, "gdbm_dyn: cannot load gdbm (%s)\n", gdbm_lib_error());
+        if (gdbm_handle) { gdbm_free_lib(gdbm_handle); gdbm_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "gdbm_dyn: loaded %d %s (1.26 headers)\n", i, candidates[i]);
@@ -240,7 +240,7 @@ void gdbm_dyn_sync_globals(void) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define GDBM_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -254,7 +254,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define GDBM_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -271,46 +271,46 @@ void name params {                                                         \
 /* ============================================================
  * 导出函数封装（gdbm.h 公开 API 43 个）
  * ============================================================ */
-WRAP_RET(int, gdbm_avail_verify, (GDBM_FILE a0), (a0), -1)
-WRAP_RET(int, gdbm_bucket_count, (GDBM_FILE a0, size_t *a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_check_syserr, (gdbm_error a0), (a0), -1)
-WRAP_VOID(gdbm_clear_error, (GDBM_FILE a0), (a0))
-WRAP_RET(int, gdbm_close, (GDBM_FILE a0), (a0), -1)
-WRAP_RET(int, gdbm_convert, (GDBM_FILE a0, int a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_copy_meta, (GDBM_FILE a0, GDBM_FILE a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_count, (GDBM_FILE a0, gdbm_count_t *a1), (a0, a1), -1)
-WRAP_RET(const char *, gdbm_db_strerror, (GDBM_FILE a0), (a0), NULL)
-WRAP_RET(int, gdbm_delete, (GDBM_FILE a0, datum a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_dump, (GDBM_FILE a0, const char *a1, int a2, int a3, int a4), (a0, a1, a2, a3, a4), -1)
-WRAP_RET(int, gdbm_dump_to_file, (GDBM_FILE a0, FILE *a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(int *, gdbm_errno_location, (void), (), NULL)
-WRAP_RET(int, gdbm_exists, (GDBM_FILE a0, datum a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_export, (GDBM_FILE a0, const char *a1, int a2, int a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, gdbm_export_to_file, (GDBM_FILE a0, FILE *a1), (a0, a1), -1)
-WRAP_RET(int, gdbm_failure_atomic, (GDBM_FILE a0, const char *a1, const char *a2), (a0, a1, a2), -1)
-WRAP_RET(int, gdbm_fdesc, (GDBM_FILE a0), (a0), -1)
-WRAP_RET(GDBM_FILE, gdbm_fd_open, (int a0, const char *a1, int a2, int a3, void (*a4)(const char *)), (a0, a1, a2, a3, a4), NULL)
-WRAP_RET(datum, gdbm_fetch, (GDBM_FILE a0, datum a1), (a0, a1), ((datum){NULL, 0}))
-WRAP_RET(datum, gdbm_firstkey, (GDBM_FILE a0), (a0), ((datum){NULL, 0}))
-WRAP_VOID(gdbm_get_cache_stats, (GDBM_FILE a0, size_t *a1, size_t *a2, size_t *a3, struct gdbm_cache_stat *a4, size_t a5), (a0, a1, a2, a3, a4, a5))
-WRAP_RET(int, gdbm_import, (GDBM_FILE a0, const char *a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(int, gdbm_import_from_file, (GDBM_FILE a0, FILE *a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(gdbm_error, gdbm_last_errno, (GDBM_FILE a0), (a0), 0)
-WRAP_RET(int, gdbm_last_syserr, (GDBM_FILE a0), (a0), 0)
-WRAP_RET(int, gdbm_latest_snapshot, (const char *a0, const char *a1, const char **a2), (a0, a1, a2), -1)
-WRAP_RET(int, gdbm_load, (GDBM_FILE *a0, const char *a1, int a2, int a3, unsigned long *a4), (a0, a1, a2, a3, a4), -1)
-WRAP_RET(int, gdbm_load_from_file, (GDBM_FILE *a0, FILE *a1, int a2, int a3, unsigned long *a4), (a0, a1, a2, a3, a4), -1)
-WRAP_RET(int, gdbm_load_from_file_ext, (GDBM_FILE *a0, FILE *a1, int a2, int a3, int a4, unsigned long *a5), (a0, a1, a2, a3, a4, a5), -1)
-WRAP_RET(int, gdbm_needs_recovery, (GDBM_FILE a0), (a0), -1)
-WRAP_RET(datum, gdbm_nextkey, (GDBM_FILE a0, datum a1), (a0, a1), ((datum){NULL, 0}))
-WRAP_RET(GDBM_FILE, gdbm_open, (const char *a0, int a1, int a2, int a3, void (*a4)(const char *)), (a0, a1, a2, a3, a4), NULL)
-WRAP_RET(GDBM_FILE, gdbm_open_ext, (const char *a0, int a1, const struct gdbm_open_spec *a2), (a0, a1, a2), NULL)
-WRAP_VOID(gdbm_open_spec_init, (struct gdbm_open_spec *a0), (a0))
-WRAP_RET(int, gdbm_recover, (GDBM_FILE a0, gdbm_recovery *a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(int, gdbm_reorganize, (GDBM_FILE a0), (a0), -1)
-WRAP_VOID(gdbm_set_errno, (GDBM_FILE a0, gdbm_error a1, int a2), (a0, a1, a2))
-WRAP_RET(int, gdbm_setopt, (GDBM_FILE a0, int a1, void *a2, int a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, gdbm_store, (GDBM_FILE a0, datum a1, datum a2, int a3), (a0, a1, a2, a3), -1)
-WRAP_RET(const char *, gdbm_strerror, (gdbm_error a0), (a0), NULL)
-WRAP_RET(int, gdbm_sync, (GDBM_FILE a0), (a0), -1)
-WRAP_RET(int, gdbm_version_cmp, (const int *a0, const int *a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_avail_verify, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_RET(int, gdbm_bucket_count, (GDBM_FILE a0, size_t *a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_check_syserr, (gdbm_error a0), (a0), -1)
+GDBM_WRAP_VOID(gdbm_clear_error, (GDBM_FILE a0), (a0))
+GDBM_WRAP_RET(int, gdbm_close, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_RET(int, gdbm_convert, (GDBM_FILE a0, int a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_copy_meta, (GDBM_FILE a0, GDBM_FILE a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_count, (GDBM_FILE a0, gdbm_count_t *a1), (a0, a1), -1)
+GDBM_WRAP_RET(const char *, gdbm_db_strerror, (GDBM_FILE a0), (a0), NULL)
+GDBM_WRAP_RET(int, gdbm_delete, (GDBM_FILE a0, datum a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_dump, (GDBM_FILE a0, const char *a1, int a2, int a3, int a4), (a0, a1, a2, a3, a4), -1)
+GDBM_WRAP_RET(int, gdbm_dump_to_file, (GDBM_FILE a0, FILE *a1, int a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(int *, gdbm_errno_location, (void), (), NULL)
+GDBM_WRAP_RET(int, gdbm_exists, (GDBM_FILE a0, datum a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_export, (GDBM_FILE a0, const char *a1, int a2, int a3), (a0, a1, a2, a3), -1)
+GDBM_WRAP_RET(int, gdbm_export_to_file, (GDBM_FILE a0, FILE *a1), (a0, a1), -1)
+GDBM_WRAP_RET(int, gdbm_failure_atomic, (GDBM_FILE a0, const char *a1, const char *a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(int, gdbm_fdesc, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_RET(GDBM_FILE, gdbm_fd_open, (int a0, const char *a1, int a2, int a3, void (*a4)(const char *)), (a0, a1, a2, a3, a4), NULL)
+GDBM_WRAP_RET(datum, gdbm_fetch, (GDBM_FILE a0, datum a1), (a0, a1), ((datum){NULL, 0}))
+GDBM_WRAP_RET(datum, gdbm_firstkey, (GDBM_FILE a0), (a0), ((datum){NULL, 0}))
+GDBM_WRAP_VOID(gdbm_get_cache_stats, (GDBM_FILE a0, size_t *a1, size_t *a2, size_t *a3, struct gdbm_cache_stat *a4, size_t a5), (a0, a1, a2, a3, a4, a5))
+GDBM_WRAP_RET(int, gdbm_import, (GDBM_FILE a0, const char *a1, int a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(int, gdbm_import_from_file, (GDBM_FILE a0, FILE *a1, int a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(gdbm_error, gdbm_last_errno, (GDBM_FILE a0), (a0), 0)
+GDBM_WRAP_RET(int, gdbm_last_syserr, (GDBM_FILE a0), (a0), 0)
+GDBM_WRAP_RET(int, gdbm_latest_snapshot, (const char *a0, const char *a1, const char **a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(int, gdbm_load, (GDBM_FILE *a0, const char *a1, int a2, int a3, unsigned long *a4), (a0, a1, a2, a3, a4), -1)
+GDBM_WRAP_RET(int, gdbm_load_from_file, (GDBM_FILE *a0, FILE *a1, int a2, int a3, unsigned long *a4), (a0, a1, a2, a3, a4), -1)
+GDBM_WRAP_RET(int, gdbm_load_from_file_ext, (GDBM_FILE *a0, FILE *a1, int a2, int a3, int a4, unsigned long *a5), (a0, a1, a2, a3, a4, a5), -1)
+GDBM_WRAP_RET(int, gdbm_needs_recovery, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_RET(datum, gdbm_nextkey, (GDBM_FILE a0, datum a1), (a0, a1), ((datum){NULL, 0}))
+GDBM_WRAP_RET(GDBM_FILE, gdbm_open, (const char *a0, int a1, int a2, int a3, void (*a4)(const char *)), (a0, a1, a2, a3, a4), NULL)
+GDBM_WRAP_RET(GDBM_FILE, gdbm_open_ext, (const char *a0, int a1, const struct gdbm_open_spec *a2), (a0, a1, a2), NULL)
+GDBM_WRAP_VOID(gdbm_open_spec_init, (struct gdbm_open_spec *a0), (a0))
+GDBM_WRAP_RET(int, gdbm_recover, (GDBM_FILE a0, gdbm_recovery *a1, int a2), (a0, a1, a2), -1)
+GDBM_WRAP_RET(int, gdbm_reorganize, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_VOID(gdbm_set_errno, (GDBM_FILE a0, gdbm_error a1, int a2), (a0, a1, a2))
+GDBM_WRAP_RET(int, gdbm_setopt, (GDBM_FILE a0, int a1, void *a2, int a3), (a0, a1, a2, a3), -1)
+GDBM_WRAP_RET(int, gdbm_store, (GDBM_FILE a0, datum a1, datum a2, int a3), (a0, a1, a2, a3), -1)
+GDBM_WRAP_RET(const char *, gdbm_strerror, (gdbm_error a0), (a0), NULL)
+GDBM_WRAP_RET(int, gdbm_sync, (GDBM_FILE a0), (a0), -1)
+GDBM_WRAP_RET(int, gdbm_version_cmp, (const int *a0, const int *a1), (a0, a1), -1)

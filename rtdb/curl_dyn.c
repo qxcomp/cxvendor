@@ -61,65 +61,65 @@ typedef struct curl_version_info_data curl_version_info_data;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE curl_lib_handle_t;
+  static curl_lib_handle_t curl_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *curl_get_sym(curl_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define DEFAULT_LIB_NAME "libcurl.dll"
-  #define PATH_SEP ';'
+  static void curl_free_lib(curl_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *curl_lib_error(void) { return "LoadLibrary failed"; }
+  #define CURL_DEFAULT_LIB_NAME "libcurl.dll"
+  #define CURL_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *curl_lib_handle_t;
+  static curl_lib_handle_t curl_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
+  static void *curl_get_sym(curl_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void curl_free_lib(curl_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *curl_lib_error(void) { return dlerror(); }
   #ifdef __APPLE__
-    #define DEFAULT_LIB_NAME "libcurl.dylib"
+    #define CURL_DEFAULT_LIB_NAME "libcurl.dylib"
   #else
-    #define DEFAULT_LIB_NAME "libcurl.so"
+    #define CURL_DEFAULT_LIB_NAME "libcurl.so"
   #endif
-  #define PATH_SEP ':'
+  #define CURL_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t curl_handle = NULL;
-static int init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
+static curl_lib_handle_t curl_handle = NULL;
+static int curl_init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define CURL_MAX_CANDIDATES 64
+#define CURL_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载：按优先级构造候选路径
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int curl_do_load(const char *library_path) {
     if (curl_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[CURL_MAX_CANDIDATES][CURL_PATH_BUF_LEN];
+    const char *candidates[CURL_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < CURL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CURL_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("CURL_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < CURL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CURL_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -137,11 +137,11 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < CURL_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, CURL_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
+                    snprintf(bufs[n], CURL_PATH_BUF_LEN, "%s/%s", p, CURL_DEFAULT_LIB_NAME);
                     { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
@@ -151,18 +151,18 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 直接给库名 */
-    candidates[n++] = DEFAULT_LIB_NAME;
+    candidates[n++] = CURL_DEFAULT_LIB_NAME;
 
     /* 5. Nix 路径 */
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
-                 home, DEFAULT_LIB_NAME);
+    if (home && *home && n < CURL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CURL_PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
+                 home, CURL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
-                 DEFAULT_LIB_NAME);
+    if (n < CURL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CURL_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
+                 CURL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -184,18 +184,18 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        curl_handle = load_lib(candidates[i]);
+        curl_handle = curl_load_lib(candidates[i]);
         if (curl_handle) break;
     }
     if (!curl_handle) {
-        fprintf(stderr, "curl_dyn: cannot load libcurl (%s)\n", lib_error());
+        fprintf(stderr, "curl_dyn: cannot load libcurl (%s)\n", curl_lib_error());
         return -1;
     }
 
     /* 验证基础符号 */
-    if (!get_sym(curl_handle, "curl_version_info")) {
+    if (!curl_get_sym(curl_handle, "curl_version_info")) {
         fprintf(stderr, "curl_dyn: loaded library does not export curl_version_info\n");
-        free_lib(curl_handle);
+        curl_free_lib(curl_handle);
         curl_handle = NULL;
         return -1;
     }
@@ -207,70 +207,70 @@ static int do_load(const char *library_path) {
  * 一次性初始化：加载库 + curl_global_init
  * ============================================================ */
 int curl_libok(void) {
-    if (init_state == 0) {
-        if (do_load(NULL) != 0) {
-            init_state = -1;
+    if (curl_init_state == 0) {
+        if (curl_do_load(NULL) != 0) {
+            curl_init_state = -1;
             return 0;
         }
         /* libcurl 要求在使用任何函数前初始化全局状态 */
         CURLcode (*fn_global_init)(long) = NULL;
-        *(void **)(&fn_global_init) = get_sym(curl_handle, "curl_global_init");
+        *(void **)(&fn_global_init) = curl_get_sym(curl_handle, "curl_global_init");
         if (!fn_global_init) {
             fprintf(stderr, "curl_dyn: curl_global_init not found\n");
-            free_lib(curl_handle);
+            curl_free_lib(curl_handle);
             curl_handle = NULL;
-            init_state = -1;
+            curl_init_state = -1;
             return 0;
         }
         if (fn_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
             fprintf(stderr, "curl_dyn: curl_global_init failed\n");
-            free_lib(curl_handle);
+            curl_free_lib(curl_handle);
             curl_handle = NULL;
-            init_state = -1;
+            curl_init_state = -1;
             return 0;
         }
-        init_state = 1;
+        curl_init_state = 1;
     }
-    return (init_state == 1 && curl_handle != NULL) ? 1 : 0;
+    return (curl_init_state == 1 && curl_handle != NULL) ? 1 : 0;
 }
 
 int curl_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) != 0) {
-        init_state = -1;
+    if (curl_init_state == 1) return 0;
+    if (curl_init_state == -1) return -1;
+    if (curl_do_load(library_path) != 0) {
+        curl_init_state = -1;
         return -1;
     }
     CURLcode (*fn_global_init)(long) = NULL;
-    *(void **)(&fn_global_init) = get_sym(curl_handle, "curl_global_init");
+    *(void **)(&fn_global_init) = curl_get_sym(curl_handle, "curl_global_init");
     if (!fn_global_init || fn_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
-        free_lib(curl_handle);
+        curl_free_lib(curl_handle);
         curl_handle = NULL;
-        init_state = -1;
+        curl_init_state = -1;
         return -1;
     }
-    init_state = 1;
+    curl_init_state = 1;
     return 0;
 }
 
 void curl_dyn_cleanup(void) {
     if (curl_handle) {
         void (*fn_global_cleanup)(void) = NULL;
-        *(void **)(&fn_global_cleanup) = get_sym(curl_handle, "curl_global_cleanup");
+        *(void **)(&fn_global_cleanup) = curl_get_sym(curl_handle, "curl_global_cleanup");
         if (fn_global_cleanup) fn_global_cleanup();
-        free_lib(curl_handle);
+        curl_free_lib(curl_handle);
         curl_handle = NULL;
     }
-    init_state = 0;
+    curl_init_state = 0;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define CURL_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!curl_libok()) return fallback;                    \
-        *(void **)(&(var)) = get_sym(curl_handle, name);       \
+        *(void **)(&(var)) = curl_get_sym(curl_handle, name);       \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -285,7 +285,7 @@ CURL *curl_easy_init(void) {
     static CURL *(*fn)(void) = NULL;
     if (!fn) {
         if (!curl_libok()) return NULL;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_easy_init");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_easy_init");
         if (!fn) return NULL;
     }
     return fn();
@@ -295,7 +295,7 @@ void curl_easy_cleanup(CURL *handle) {
     static void (*fn)(CURL*) = NULL;
     if (!fn) {
         if (!curl_libok()) return;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_easy_cleanup");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_easy_cleanup");
         if (!fn) return;
     }
     fn(handle);
@@ -306,7 +306,7 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
     static CURLcode (*fn)(CURL*, CURLoption, ...) = NULL;
     if (!fn) {
         if (!curl_libok()) return CURLE_FAILED_INIT;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_easy_setopt");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_easy_setopt");
         if (!fn) return CURLE_FAILED_INIT;
     }
     /* 注意：可变参数的转发是平台相关的，严格来说不可移植。
@@ -335,7 +335,7 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
 
 CURLcode curl_easy_perform(CURL *handle) {
     static CURLcode (*fn)(CURL*) = NULL;
-    RESOLVE(fn, "curl_easy_perform", CURLE_FAILED_INIT);
+    CURL_RESOLVE(fn, "curl_easy_perform", CURLE_FAILED_INIT);
     return fn(handle);
 }
 
@@ -343,7 +343,7 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
     static CURLcode (*fn)(CURL*, CURLINFO, ...) = NULL;
     if (!fn) {
         if (!curl_libok()) return CURLE_FAILED_INIT;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_easy_getinfo");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_easy_getinfo");
         if (!fn) return CURLE_FAILED_INIT;
     }
     va_list args;
@@ -358,7 +358,7 @@ const char *curl_easy_strerror(CURLcode code) {
     static const char *(*fn)(CURLcode) = NULL;
     if (!fn) {
         if (!curl_libok()) return "curl not initialized";
-        *(void **)(&fn) = get_sym(curl_handle, "curl_easy_strerror");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_easy_strerror");
         if (!fn) return "curl_easy_strerror not resolved";
     }
     return fn(code);
@@ -368,7 +368,7 @@ curl_version_info_data *curl_version_info(CURLversion age) {
     static curl_version_info_data *(*fn)(CURLversion) = NULL;
     if (!fn) {
         if (!curl_libok()) return NULL;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_version_info");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_version_info");
         if (!fn) return NULL;
     }
     return fn(age);
@@ -378,7 +378,7 @@ void curl_free(void *p) {
     static void (*fn)(void*) = NULL;
     if (!fn) {
         if (!curl_libok()) return;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_free");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_free");
         if (!fn) return;
     }
     fn(p);
@@ -388,7 +388,7 @@ struct curl_slist *curl_slist_append(struct curl_slist *list, const char *string
     static struct curl_slist *(*fn)(struct curl_slist*, const char*) = NULL;
     if (!fn) {
         if (!curl_libok()) return NULL;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_slist_append");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_slist_append");
         if (!fn) return NULL;
     }
     return fn(list, string);
@@ -398,7 +398,7 @@ void curl_slist_free_all(struct curl_slist *list) {
     static void (*fn)(struct curl_slist*) = NULL;
     if (!fn) {
         if (!curl_libok()) return;
-        *(void **)(&fn) = get_sym(curl_handle, "curl_slist_free_all");
+        *(void **)(&fn) = curl_get_sym(curl_handle, "curl_slist_free_all");
         if (!fn) return;
     }
     fn(list);

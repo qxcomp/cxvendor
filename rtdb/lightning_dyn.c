@@ -24,20 +24,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE lightning_lib_handle_t;
+  static lightning_lib_handle_t lightning_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *lightning_get_sym(lightning_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void lightning_free_lib(lightning_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *lightning_lib_error(void) { return "LoadLibrary failed"; }
+  #define LIGHTNING_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *lightning_lib_handle_t;
+  static lightning_lib_handle_t lightning_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *lightning_get_sym(lightning_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void lightning_free_lib(lightning_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *lightning_lib_error(void) { return dlerror(); }
+  #define LIGHTNING_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -76,11 +76,11 @@ typedef void (*jit_free_func_ptr)(void *);
 #endif /* LIGHTNING_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
-static lib_handle_t lightning_handle = NULL;
+static lightning_lib_handle_t lightning_handle = NULL;
 static int lightning_init_state = 0;
 
 static void *lightning_sym(const char *name) {
-    return lightning_handle ? get_sym(lightning_handle, name) : NULL;
+    return lightning_handle ? lightning_get_sym(lightning_handle, name) : NULL;
 }
 
 static int lightning_do_load(const char *library_path) {
@@ -118,12 +118,12 @@ static int lightning_do_load(const char *library_path) {
             if (copy) {
                 char *p = copy;
                 while (p && n < 60) {
-                    char *sep = strchr(p, PATH_SEP);
+                    char *sep = strchr(p, LIGHTNING_PATH_SEP);
                     if (sep) *sep = '\0';
                     if (*p) {
-                        snprintf(bufs[n], sizeof bufs[0], "%s%c%s", p, PATH_SEP, so_soname);
+                        snprintf(bufs[n], sizeof bufs[0], "%s%c%s", p, LIGHTNING_PATH_SEP, so_soname);
                         candidates[n] = bufs[n]; n++;
-                        snprintf(bufs[n], sizeof bufs[0], "%s%c%s", p, PATH_SEP, so_plain);
+                        snprintf(bufs[n], sizeof bufs[0], "%s%c%s", p, LIGHTNING_PATH_SEP, so_plain);
                         candidates[n] = bufs[n]; n++;
                     }
                     p = sep ? sep + 1 : NULL;
@@ -153,11 +153,11 @@ static int lightning_do_load(const char *library_path) {
 
     candidates[n] = NULL;
     for (i = 0; i < n; i++) {
-        lib_handle_t h = load_lib(candidates[i]);
+        lightning_lib_handle_t h = lightning_load_lib(candidates[i]);
         if (h) { lightning_handle = h; res = i; break; }
     }
     if (res < 0) {
-        fprintf(stderr, "lightning_dyn: cannot load lightning (%s)\n", lib_error());
+        fprintf(stderr, "lightning_dyn: cannot load lightning (%s)\n", lightning_lib_error());
         return -1;
     }
     fprintf(stderr, "lightning_dyn: loaded %d %s\n", res, candidates[res]);
@@ -174,7 +174,7 @@ int lightning_dyn_init(const char *library_path) {
 }
 
 void lightning_dyn_cleanup(void) {
-    if (lightning_handle) { free_lib(lightning_handle); lightning_handle = NULL; }
+    if (lightning_handle) { lightning_free_lib(lightning_handle); lightning_handle = NULL; }
     lightning_init_state = 0;
 }
 
@@ -186,7 +186,7 @@ int lightning_dyn_has_symbol(const char *name) {
 }
 
 /* ---------- WRAP 宏 ---------- */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define LIGHTNING_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -199,7 +199,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define LIGHTNING_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -214,107 +214,107 @@ void name params {                                                             \
 }
 
 /* ---------- 104 个 extern 函数（函数名原样） ---------- */
-WRAP_VOID(init_jit, (const char *p), (p))
-WRAP_VOID(finish_jit, (void), ())
-WRAP_RET(jit_state_t *, jit_new_state, (void), (), NULL)
-WRAP_VOID(_jit_clear_state, (jit_state_t *j), (j))
-WRAP_VOID(_jit_destroy_state, (jit_state_t *j), (j))
-WRAP_RET(jit_pointer_t, _jit_address, (jit_state_t *j, jit_node_t *node), (j, node), NULL)
-WRAP_RET(jit_node_t *, _jit_name, (jit_state_t *j, const char *name), (j, name), NULL)
-WRAP_RET(jit_node_t *, _jit_note, (jit_state_t *j, const char *name, int size), (j, name, size), NULL)
-WRAP_RET(jit_node_t *, _jit_label, (jit_state_t *j), (j), NULL)
-WRAP_RET(jit_node_t *, _jit_forward, (jit_state_t *j), (j), NULL)
-WRAP_RET(jit_node_t *, _jit_indirect, (jit_state_t *j), (j), NULL)
-WRAP_VOID(_jit_link, (jit_state_t *j, jit_node_t *node), (j, node))
-WRAP_RET(jit_bool_t, _jit_forward_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
-WRAP_RET(jit_bool_t, _jit_indirect_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
-WRAP_RET(jit_bool_t, _jit_target_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
-WRAP_VOID(_jit_prolog, (jit_state_t *j), (j))
-WRAP_RET(jit_int32_t, _jit_allocai, (jit_state_t *j, jit_int32_t size), (j, size), 0)
-WRAP_VOID(_jit_allocar, (jit_state_t *j, jit_int32_t reg, jit_int32_t size), (j, reg, size))
-WRAP_VOID(_jit_ellipsis, (jit_state_t *j), (j))
-WRAP_RET(jit_node_t *, _jit_arg, (jit_state_t *j), (j), NULL)
-WRAP_VOID(_jit_getarg_c, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_uc, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_s, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_us, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_i, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_ui, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_getarg_l, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargr, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargi, (jit_state_t *j, jit_word_t word, jit_node_t *node), (j, word, node))
-WRAP_VOID(_jit_prepare, (jit_state_t *j), (j))
-WRAP_VOID(_jit_va_push, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_pushargr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_pushargi, (jit_state_t *j, jit_word_t word), (j, word))
-WRAP_VOID(_jit_finishr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_RET(jit_node_t *, _jit_finishi, (jit_state_t *j, jit_pointer_t ptr), (j, ptr), NULL)
-WRAP_VOID(_jit_ret, (jit_state_t *j), (j))
-WRAP_VOID(_jit_retr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_reti, (jit_state_t *j, jit_word_t word), (j, word))
-WRAP_VOID(_jit_retval_c, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_uc, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_s, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_us, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_i, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_ui, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_retval_l, (jit_state_t *j, jit_gpr_t reg), (j, reg))
-WRAP_VOID(_jit_epilog, (jit_state_t *j), (j))
-WRAP_VOID(_jit_patch, (jit_state_t *j, jit_node_t *node), (j, node))
-WRAP_VOID(_jit_patch_at, (jit_state_t *j, jit_node_t *node, jit_node_t *other), (j, node, other))
-WRAP_VOID(_jit_patch_abs, (jit_state_t *j, jit_node_t *node, jit_pointer_t ptr), (j, node, ptr))
-WRAP_VOID(_jit_realize, (jit_state_t *j), (j))
-WRAP_RET(jit_pointer_t, _jit_get_code, (jit_state_t *j, jit_word_t *size), (j, size), NULL)
-WRAP_VOID(_jit_set_code, (jit_state_t *j, jit_pointer_t code, jit_word_t size), (j, code, size))
-WRAP_RET(jit_pointer_t, _jit_get_data, (jit_state_t *j, jit_word_t *size, jit_word_t *seg), (j, size, seg), NULL)
-WRAP_VOID(_jit_set_data, (jit_state_t *j, jit_pointer_t data, jit_word_t size, jit_word_t seg), (j, data, size, seg))
-WRAP_VOID(_jit_frame, (jit_state_t *j, jit_int32_t size), (j, size))
-WRAP_VOID(_jit_tramp, (jit_state_t *j, jit_int32_t size), (j, size))
-WRAP_RET(jit_pointer_t, _jit_emit, (jit_state_t *j), (j), NULL)
-WRAP_VOID(_jit_print, (jit_state_t *j), (j))
-WRAP_RET(jit_node_t *, _jit_arg_f, (jit_state_t *j), (j), NULL)
-WRAP_VOID(_jit_getarg_f, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargr_f, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargi_f, (jit_state_t *j, jit_float32_t value, jit_node_t *node), (j, value, node))
-WRAP_VOID(_jit_pushargr_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_VOID(_jit_pushargi_f, (jit_state_t *j, jit_float32_t value), (j, value))
-WRAP_VOID(_jit_retr_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_VOID(_jit_reti_f, (jit_state_t *j, jit_float32_t value), (j, value))
-WRAP_VOID(_jit_retval_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_RET(jit_node_t *, _jit_arg_d, (jit_state_t *j), (j), NULL)
-WRAP_VOID(_jit_getarg_d, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargr_d, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
-WRAP_VOID(_jit_putargi_d, (jit_state_t *j, jit_float64_t value, jit_node_t *node), (j, value, node))
-WRAP_VOID(_jit_pushargr_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_VOID(_jit_pushargi_d, (jit_state_t *j, jit_float64_t value), (j, value))
-WRAP_VOID(_jit_retr_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_VOID(_jit_reti_d, (jit_state_t *j, jit_float64_t value), (j, value))
-WRAP_VOID(_jit_retval_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
-WRAP_RET(jit_int32_t, _jit_get_reg, (jit_state_t *j, jit_int32_t reg), (j, reg), 0)
-WRAP_VOID(_jit_unget_reg, (jit_state_t *j, jit_int32_t reg), (j, reg))
-WRAP_RET(jit_node_t *, _jit_new_node, (jit_state_t *j, jit_code_t code), (j, code), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_w, (jit_state_t *j, jit_code_t code, jit_word_t w), (j, code, w), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_f, (jit_state_t *j, jit_code_t code, jit_float32_t f), (j, code, f), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_d, (jit_state_t *j, jit_code_t code, jit_float64_t d), (j, code, d), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_p, (jit_state_t *j, jit_code_t code, jit_pointer_t p), (j, code, p), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_ww, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2), (j, code, w1, w2), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_wp, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_pointer_t p), (j, code, w, p), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_fp, (jit_state_t *j, jit_code_t code, jit_float32_t f, jit_pointer_t p), (j, code, f, p), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_dp, (jit_state_t *j, jit_code_t code, jit_float64_t d, jit_pointer_t p), (j, code, d, p), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_pw, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w), (j, code, p, w), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_wf, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_float32_t f), (j, code, w, f), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_wd, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_float64_t d), (j, code, w, d), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_www, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_word_t w3), (j, code, w1, w2, w3), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_qww, (jit_state_t *j, jit_code_t code, jit_int32_t q1, jit_int32_t q2, jit_word_t w1, jit_word_t w2), (j, code, q1, q2, w1, w2), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_wwf, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_float32_t f), (j, code, w1, w2, f), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_wwd, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_float64_t d), (j, code, w1, w2, d), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_pww, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w1, jit_word_t w2), (j, code, p, w1, w2), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_pwf, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w, jit_float32_t f), (j, code, p, w, f), NULL)
-WRAP_RET(jit_node_t *, _jit_new_node_pwd, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w, jit_float64_t d), (j, code, p, w, d), NULL)
-WRAP_RET(jit_bool_t, _jit_arg_register_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
-WRAP_RET(jit_bool_t, _jit_callee_save_p, (jit_state_t *j, jit_int32_t reg), (j, reg), 0)
-WRAP_RET(jit_bool_t, _jit_pointer_p, (jit_state_t *j, jit_pointer_t ptr), (j, ptr), 0)
-WRAP_RET(jit_bool_t, _jit_get_note, (jit_state_t *j, jit_pointer_t ptr, char **kind, char **note, int *size), (j, ptr, kind, note, size), 0)
-WRAP_VOID(_jit_disassemble, (jit_state_t *j), (j))
-WRAP_VOID(jit_set_memory_functions, (jit_alloc_func_ptr alloc, jit_realloc_func_ptr realloc_fn, jit_free_func_ptr free_fn), (alloc, realloc_fn, free_fn))
-WRAP_VOID(jit_get_memory_functions, (jit_alloc_func_ptr *alloc, jit_realloc_func_ptr *realloc_fn, jit_free_func_ptr *free_fn), (alloc, realloc_fn, free_fn))
+LIGHTNING_WRAP_VOID(init_jit, (const char *p), (p))
+LIGHTNING_WRAP_VOID(finish_jit, (void), ())
+LIGHTNING_WRAP_RET(jit_state_t *, jit_new_state, (void), (), NULL)
+LIGHTNING_WRAP_VOID(_jit_clear_state, (jit_state_t *j), (j))
+LIGHTNING_WRAP_VOID(_jit_destroy_state, (jit_state_t *j), (j))
+LIGHTNING_WRAP_RET(jit_pointer_t, _jit_address, (jit_state_t *j, jit_node_t *node), (j, node), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_name, (jit_state_t *j, const char *name), (j, name), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_note, (jit_state_t *j, const char *name, int size), (j, name, size), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_label, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_forward, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_indirect, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_VOID(_jit_link, (jit_state_t *j, jit_node_t *node), (j, node))
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_forward_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_indirect_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_target_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
+LIGHTNING_WRAP_VOID(_jit_prolog, (jit_state_t *j), (j))
+LIGHTNING_WRAP_RET(jit_int32_t, _jit_allocai, (jit_state_t *j, jit_int32_t size), (j, size), 0)
+LIGHTNING_WRAP_VOID(_jit_allocar, (jit_state_t *j, jit_int32_t reg, jit_int32_t size), (j, reg, size))
+LIGHTNING_WRAP_VOID(_jit_ellipsis, (jit_state_t *j), (j))
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_arg, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_VOID(_jit_getarg_c, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_uc, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_s, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_us, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_i, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_ui, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_getarg_l, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargr, (jit_state_t *j, jit_gpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargi, (jit_state_t *j, jit_word_t word, jit_node_t *node), (j, word, node))
+LIGHTNING_WRAP_VOID(_jit_prepare, (jit_state_t *j), (j))
+LIGHTNING_WRAP_VOID(_jit_va_push, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_pushargr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_pushargi, (jit_state_t *j, jit_word_t word), (j, word))
+LIGHTNING_WRAP_VOID(_jit_finishr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_finishi, (jit_state_t *j, jit_pointer_t ptr), (j, ptr), NULL)
+LIGHTNING_WRAP_VOID(_jit_ret, (jit_state_t *j), (j))
+LIGHTNING_WRAP_VOID(_jit_retr, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_reti, (jit_state_t *j, jit_word_t word), (j, word))
+LIGHTNING_WRAP_VOID(_jit_retval_c, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_uc, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_s, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_us, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_i, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_ui, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_retval_l, (jit_state_t *j, jit_gpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_epilog, (jit_state_t *j), (j))
+LIGHTNING_WRAP_VOID(_jit_patch, (jit_state_t *j, jit_node_t *node), (j, node))
+LIGHTNING_WRAP_VOID(_jit_patch_at, (jit_state_t *j, jit_node_t *node, jit_node_t *other), (j, node, other))
+LIGHTNING_WRAP_VOID(_jit_patch_abs, (jit_state_t *j, jit_node_t *node, jit_pointer_t ptr), (j, node, ptr))
+LIGHTNING_WRAP_VOID(_jit_realize, (jit_state_t *j), (j))
+LIGHTNING_WRAP_RET(jit_pointer_t, _jit_get_code, (jit_state_t *j, jit_word_t *size), (j, size), NULL)
+LIGHTNING_WRAP_VOID(_jit_set_code, (jit_state_t *j, jit_pointer_t code, jit_word_t size), (j, code, size))
+LIGHTNING_WRAP_RET(jit_pointer_t, _jit_get_data, (jit_state_t *j, jit_word_t *size, jit_word_t *seg), (j, size, seg), NULL)
+LIGHTNING_WRAP_VOID(_jit_set_data, (jit_state_t *j, jit_pointer_t data, jit_word_t size, jit_word_t seg), (j, data, size, seg))
+LIGHTNING_WRAP_VOID(_jit_frame, (jit_state_t *j, jit_int32_t size), (j, size))
+LIGHTNING_WRAP_VOID(_jit_tramp, (jit_state_t *j, jit_int32_t size), (j, size))
+LIGHTNING_WRAP_RET(jit_pointer_t, _jit_emit, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_VOID(_jit_print, (jit_state_t *j), (j))
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_arg_f, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_VOID(_jit_getarg_f, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargr_f, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargi_f, (jit_state_t *j, jit_float32_t value, jit_node_t *node), (j, value, node))
+LIGHTNING_WRAP_VOID(_jit_pushargr_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_pushargi_f, (jit_state_t *j, jit_float32_t value), (j, value))
+LIGHTNING_WRAP_VOID(_jit_retr_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_reti_f, (jit_state_t *j, jit_float32_t value), (j, value))
+LIGHTNING_WRAP_VOID(_jit_retval_f, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_arg_d, (jit_state_t *j), (j), NULL)
+LIGHTNING_WRAP_VOID(_jit_getarg_d, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargr_d, (jit_state_t *j, jit_fpr_t reg, jit_node_t *node), (j, reg, node))
+LIGHTNING_WRAP_VOID(_jit_putargi_d, (jit_state_t *j, jit_float64_t value, jit_node_t *node), (j, value, node))
+LIGHTNING_WRAP_VOID(_jit_pushargr_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_pushargi_d, (jit_state_t *j, jit_float64_t value), (j, value))
+LIGHTNING_WRAP_VOID(_jit_retr_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_VOID(_jit_reti_d, (jit_state_t *j, jit_float64_t value), (j, value))
+LIGHTNING_WRAP_VOID(_jit_retval_d, (jit_state_t *j, jit_fpr_t reg), (j, reg))
+LIGHTNING_WRAP_RET(jit_int32_t, _jit_get_reg, (jit_state_t *j, jit_int32_t reg), (j, reg), 0)
+LIGHTNING_WRAP_VOID(_jit_unget_reg, (jit_state_t *j, jit_int32_t reg), (j, reg))
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node, (jit_state_t *j, jit_code_t code), (j, code), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_w, (jit_state_t *j, jit_code_t code, jit_word_t w), (j, code, w), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_f, (jit_state_t *j, jit_code_t code, jit_float32_t f), (j, code, f), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_d, (jit_state_t *j, jit_code_t code, jit_float64_t d), (j, code, d), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_p, (jit_state_t *j, jit_code_t code, jit_pointer_t p), (j, code, p), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_ww, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2), (j, code, w1, w2), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_wp, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_pointer_t p), (j, code, w, p), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_fp, (jit_state_t *j, jit_code_t code, jit_float32_t f, jit_pointer_t p), (j, code, f, p), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_dp, (jit_state_t *j, jit_code_t code, jit_float64_t d, jit_pointer_t p), (j, code, d, p), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_pw, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w), (j, code, p, w), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_wf, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_float32_t f), (j, code, w, f), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_wd, (jit_state_t *j, jit_code_t code, jit_word_t w, jit_float64_t d), (j, code, w, d), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_www, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_word_t w3), (j, code, w1, w2, w3), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_qww, (jit_state_t *j, jit_code_t code, jit_int32_t q1, jit_int32_t q2, jit_word_t w1, jit_word_t w2), (j, code, q1, q2, w1, w2), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_wwf, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_float32_t f), (j, code, w1, w2, f), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_wwd, (jit_state_t *j, jit_code_t code, jit_word_t w1, jit_word_t w2, jit_float64_t d), (j, code, w1, w2, d), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_pww, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w1, jit_word_t w2), (j, code, p, w1, w2), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_pwf, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w, jit_float32_t f), (j, code, p, w, f), NULL)
+LIGHTNING_WRAP_RET(jit_node_t *, _jit_new_node_pwd, (jit_state_t *j, jit_code_t code, jit_pointer_t p, jit_word_t w, jit_float64_t d), (j, code, p, w, d), NULL)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_arg_register_p, (jit_state_t *j, jit_node_t *node), (j, node), 0)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_callee_save_p, (jit_state_t *j, jit_int32_t reg), (j, reg), 0)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_pointer_p, (jit_state_t *j, jit_pointer_t ptr), (j, ptr), 0)
+LIGHTNING_WRAP_RET(jit_bool_t, _jit_get_note, (jit_state_t *j, jit_pointer_t ptr, char **kind, char **note, int *size), (j, ptr, kind, note, size), 0)
+LIGHTNING_WRAP_VOID(_jit_disassemble, (jit_state_t *j), (j))
+LIGHTNING_WRAP_VOID(jit_set_memory_functions, (jit_alloc_func_ptr alloc, jit_realloc_func_ptr realloc_fn, jit_free_func_ptr free_fn), (alloc, realloc_fn, free_fn))
+LIGHTNING_WRAP_VOID(jit_get_memory_functions, (jit_alloc_func_ptr *alloc, jit_realloc_func_ptr *realloc_fn, jit_free_func_ptr *free_fn), (alloc, realloc_fn, free_fn))

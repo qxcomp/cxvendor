@@ -316,94 +316,94 @@ typedef enum { DBUS_DYN_WATCH_READABLE = (1 << 0), DBUS_DYN_WATCH_WRITABLE = (1 
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE dbus_lib_handle_t;
+  static dbus_lib_handle_t dbus_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *dbus_get_sym(dbus_lib_handle_t h, const char *name) {
       return (void *)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void dbus_free_lib(dbus_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *dbus_lib_error(void) { return "LoadLibrary failed"; }
+  #define DBUS_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *dbus_lib_handle_t;
+  static dbus_lib_handle_t dbus_load_lib(const char *path) {
       /* 纯 C 库，无 C++ 初始化问题 */
       return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *dbus_get_sym(dbus_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void dbus_free_lib(dbus_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *dbus_lib_error(void) { return dlerror(); }
+  #define DBUS_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t dbus_handle_lib = NULL;
-static int init_state = 0;          /* 0=未初始化, 1=已加载, -1=失败 */
+static dbus_lib_handle_t dbus_handle_lib = NULL;
+static int dbus_init_state = 0;          /* 0=未初始化, 1=已加载, -1=失败 */
 static int dbus_lib_major = 0;
 static int dbus_lib_minor = 0;
 static int dbus_lib_micro = 0;
 static char dbus_version_str[64];
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define DBUS_MAX_CANDIDATES 64
+#define DBUS_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 候选路径工具
  * ============================================================ */
-static int push_candidate(const char **candidates,
-                          char bufs[][PATH_BUF_LEN],
+static int dbus_push_candidate(const char **candidates,
+                          char bufs[][DBUS_PATH_BUF_LEN],
                           int n, const char *path) {
-    if (n >= MAX_CANDIDATES - 1) return n;
-    snprintf(bufs[n], PATH_BUF_LEN, "%s", path);
+    if (n >= DBUS_MAX_CANDIDATES - 1) return n;
+    snprintf(bufs[n], DBUS_PATH_BUF_LEN, "%s", path);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static int push_candidate_fmt(const char **candidates,
-                              char bufs[][PATH_BUF_LEN],
+static int dbus_push_candidate_fmt(const char **candidates,
+                              char bufs[][DBUS_PATH_BUF_LEN],
                               int n, const char *fmt, ...) {
     va_list ap;
-    if (n >= MAX_CANDIDATES - 1) return n;
+    if (n >= DBUS_MAX_CANDIDATES - 1) return n;
     va_start(ap, fmt);
-    vsnprintf(bufs[n], PATH_BUF_LEN, fmt, ap);
+    vsnprintf(bufs[n], DBUS_PATH_BUF_LEN, fmt, ap);
     va_end(ap);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static char *dup_string(const char *s) {
+static char *dbus_dup_string(const char *s) {
     size_t len = strlen(s) + 1;
     char *p = (char *)malloc(len);
     if (p) memcpy(p, s, len);
     return p;
 }
 
-static int push_dir_names(const char **candidates,
-                          char bufs[][PATH_BUF_LEN], int n,
+static int dbus_push_dir_names(const char **candidates,
+                          char bufs[][DBUS_PATH_BUF_LEN], int n,
                           const char *dir) {
 #if defined(_WIN32)
-    n = push_candidate_fmt(candidates, bufs, n, "%s/dbus-1.dll", dir);
+    n = dbus_push_candidate_fmt(candidates, bufs, n, "%s/dbus-1.dll", dir);
 #elif defined(__APPLE__)
-    n = push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.dylib", dir);
+    n = dbus_push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.dylib", dir);
 #else
-    n = push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.so.3", dir);
-    n = push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.so", dir);
+    n = dbus_push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.so.3", dir);
+    n = dbus_push_candidate_fmt(candidates, bufs, n, "%s/libdbus-1.so", dir);
 #endif
     return n;
 }
 
-static int push_bare_names(const char **candidates,
-                           char bufs[][PATH_BUF_LEN], int n) {
+static int dbus_push_bare_names(const char **candidates,
+                           char bufs[][DBUS_PATH_BUF_LEN], int n) {
 #if defined(_WIN32)
-    n = push_candidate(candidates, bufs, n, "dbus-1.dll");
+    n = dbus_push_candidate(candidates, bufs, n, "dbus-1.dll");
 #elif defined(__APPLE__)
-    n = push_candidate(candidates, bufs, n, "libdbus-1.dylib");
+    n = dbus_push_candidate(candidates, bufs, n, "libdbus-1.dylib");
 #else
-    n = push_candidate(candidates, bufs, n, "libdbus-1.so.3");
-    n = push_candidate(candidates, bufs, n, "libdbus-1.so");
+    n = dbus_push_candidate(candidates, bufs, n, "libdbus-1.so.3");
+    n = dbus_push_candidate(candidates, bufs, n, "libdbus-1.so");
 #endif
     return n;
 }
@@ -411,24 +411,24 @@ static int push_bare_names(const char **candidates,
 /* ============================================================
  * 加载与锚点符号验证
  * ============================================================ */
-static int try_candidate(const char *path, int idx) {
-    lib_handle_t h;
+static int dbus_try_candidate(const char *path, int idx) {
+    dbus_lib_handle_t h;
     void *sym_err;
     void *sym_msg;
     void *sym_ver;
 
-    h = load_lib(path);
+    h = dbus_load_lib(path);
     if (!h) return -1;
 
-    sym_err = get_sym(h, "dbus_error_init");
-    sym_msg = get_sym(h, "dbus_message_new_method_call");
+    sym_err = dbus_get_sym(h, "dbus_error_init");
+    sym_msg = dbus_get_sym(h, "dbus_message_new_method_call");
     if (!sym_err || !sym_msg) {
-        free_lib(h);
+        dbus_free_lib(h);
         return -1;
     }
 
     dbus_handle_lib = h;
-    sym_ver = get_sym(h, "dbus_get_version");
+    sym_ver = dbus_get_sym(h, "dbus_get_version");
     if (sym_ver) {
         void (*fn_ver)(int *, int *, int *) = NULL;
         *(void **)(&fn_ver) = sym_ver;
@@ -443,9 +443,9 @@ static int try_candidate(const char *path, int idx) {
     return 0;
 }
 
-static int do_load(const char *library_path) {
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+static int dbus_do_load(const char *library_path) {
+    static char bufs[DBUS_MAX_CANDIDATES][DBUS_PATH_BUF_LEN];
+    const char *candidates[DBUS_MAX_CANDIDATES];
     int n = 0;
     int i;
     const char *env_path;
@@ -454,13 +454,13 @@ static int do_load(const char *library_path) {
 
     /* 1. 显式路径 */
     if (library_path && *library_path)
-        n = push_candidate(candidates, bufs, n, library_path);
+        n = dbus_push_candidate(candidates, bufs, n, library_path);
 
     /* 2. 环境变量 */
     {
         const char *explicit_lib = getenv("DBUS_DYN_LIB");
         if (explicit_lib && *explicit_lib)
-            n = push_candidate(candidates, bufs, n, explicit_lib);
+            n = dbus_push_candidate(candidates, bufs, n, explicit_lib);
     }
 
     /* 3. 系统搜索路径目录 */
@@ -474,14 +474,14 @@ static int do_load(const char *library_path) {
 #endif
     );
     if (env_path && *env_path) {
-        char *copy = dup_string(env_path);
+        char *copy = dbus_dup_string(env_path);
         if (copy) {
             char *p = copy;
             while (p && *p) {
-                char *sep = strchr(p, PATH_SEP);
+                char *sep = strchr(p, DBUS_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p)
-                    n = push_dir_names(candidates, bufs, n, p);
+                    n = dbus_push_dir_names(candidates, bufs, n, p);
                 p = sep ? sep + 1 : NULL;
             }
             free(copy);
@@ -489,52 +489,52 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 裸库名 */
-    n = push_bare_names(candidates, bufs, n);
+    n = dbus_push_bare_names(candidates, bufs, n);
 
     /* 5. Nix */
 #ifndef _WIN32
     {
         const char *home = getenv("HOME");
-        char dir[PATH_BUF_LEN];
+        char dir[DBUS_PATH_BUF_LEN];
         if (home && *home) {
             snprintf(dir, sizeof(dir), "%s/.nix-profile/lib", home);
-            n = push_dir_names(candidates, bufs, n, dir);
+            n = dbus_push_dir_names(candidates, bufs, n, dir);
         }
-        n = push_dir_names(candidates, bufs, n,
+        n = dbus_push_dir_names(candidates, bufs, n,
                            "/nix/var/nix/profiles/default/lib");
     }
 #endif
 
     /* 6. 平台默认路径 */
 #ifdef __APPLE__
-    n = push_dir_names(candidates, bufs, n, "/opt/local/lib");
-    n = push_dir_names(candidates, bufs, n, "/usr/local/lib");
-    n = push_dir_names(candidates, bufs, n, "/opt/homebrew/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/opt/local/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/local/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/opt/homebrew/lib");
 #elif defined(__linux__) || defined(__ANDROID__)
-    n = push_dir_names(candidates, bufs, n, "/usr/local/lib");
-    n = push_dir_names(candidates, bufs, n, "/usr/lib");
-    n = push_dir_names(candidates, bufs, n, "/usr/lib/x86_64-linux-gnu");
-    n = push_dir_names(candidates, bufs, n, "/usr/lib/aarch64-linux-gnu");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/local/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/lib/x86_64-linux-gnu");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/lib/aarch64-linux-gnu");
     {
         const char *prefix = getenv("PREFIX"); /* Termux */
         if (prefix && *prefix) {
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = dbus_push_candidate_fmt(candidates, bufs, n,
                                    "%s/lib/libdbus-1.so.3", prefix);
         }
     }
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    n = push_dir_names(candidates, bufs, n, "/usr/local/lib");
-    n = push_dir_names(candidates, bufs, n, "/usr/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/local/lib");
+    n = dbus_push_dir_names(candidates, bufs, n, "/usr/lib");
 #endif
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i], i) == 0)
+        if (dbus_try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
     {
-        const char *err = lib_error();
+        const char *err = dbus_lib_error();
         fprintf(stderr, "dbus_dyn: cannot load libdbus-1 (%s)\n",
                 err ? err : "unknown error");
     }
@@ -545,19 +545,19 @@ static int do_load(const char *library_path) {
  * 控制函数
  * ============================================================ */
 int dbus_libok(void) {
-    if (init_state == 0)
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
-    return (init_state == 1 && dbus_handle_lib != NULL) ? 1 : 0;
+    if (dbus_init_state == 0)
+        dbus_init_state = (dbus_do_load(NULL) == 0) ? 1 : -1;
+    return (dbus_init_state == 1 && dbus_handle_lib != NULL) ? 1 : 0;
 }
 
 int dbus_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (dbus_init_state == 1) return 0;
+    if (dbus_init_state == -1) return -1;
+    if (dbus_do_load(library_path) == 0) {
+        dbus_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    dbus_init_state = -1;
     return -1;
 }
 
@@ -565,45 +565,45 @@ int dbus_dyn_init(const char *library_path) {
  * 只有加载失败状态才复位，允许修正路径后重试。
  * 注意：dbus_shutdown() 由应用在关闭所有连接后自行调用。 */
 void dbus_dyn_cleanup(void) {
-    if (init_state == -1)
-        init_state = 0;
+    if (dbus_init_state == -1)
+        dbus_init_state = 0;
 }
 
 const char *dbus_dyn_version(void) {
-    if (init_state == 0) dbus_libok();
+    if (dbus_init_state == 0) dbus_libok();
     return dbus_version_str;
 }
 
 int dbus_dyn_major(void) {
-    if (init_state == 0) dbus_libok();
+    if (dbus_init_state == 0) dbus_libok();
     return dbus_lib_major;
 }
 
 int dbus_dyn_minor(void) {
-    if (init_state == 0) dbus_libok();
+    if (dbus_init_state == 0) dbus_libok();
     return dbus_lib_minor;
 }
 
 int dbus_dyn_micro(void) {
-    if (init_state == 0) dbus_libok();
+    if (dbus_init_state == 0) dbus_libok();
     return dbus_lib_micro;
 }
 
 int dbus_dyn_has_symbol(const char *name) {
     if (!name || !*name) return 0;
     if (!dbus_libok()) return 0;
-    return get_sym(dbus_handle_lib, name) != NULL;
+    return dbus_get_sym(dbus_handle_lib, name) != NULL;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                \
+#define DBUS_WRAP_RET(ret, name, params, args, fallback)                \
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
         if (!dbus_libok()) return fallback;                        \
-        *(void **)(&fn) = get_sym(dbus_handle_lib, #name);         \
+        *(void **)(&fn) = dbus_get_sym(dbus_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "dbus_dyn: dlsym failed: %s\n",        \
                     #name);                                        \
@@ -613,12 +613,12 @@ ret name params {                                                  \
     return fn args;                                                \
 }
 
-#define WRAP_VOID(name, params, args)                              \
+#define DBUS_WRAP_VOID(name, params, args)                              \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
         if (!dbus_libok()) return;                                 \
-        *(void **)(&fn) = get_sym(dbus_handle_lib, #name);         \
+        *(void **)(&fn) = dbus_get_sym(dbus_handle_lib, #name);         \
         if (!fn) {                                                 \
             fprintf(stderr, "dbus_dyn: dlsym failed: %s\n",        \
                     #name);                                        \
@@ -631,18 +631,18 @@ void name params {                                                 \
 /* ============================================================
  * Errors
  * ============================================================ */
-WRAP_VOID(dbus_error_init, (DBusError *error), (error))
-WRAP_VOID(dbus_error_free, (DBusError *error), (error))
-WRAP_RET(dbus_bool_t, dbus_error_has_name,
+DBUS_WRAP_VOID(dbus_error_init, (DBusError *error), (error))
+DBUS_WRAP_VOID(dbus_error_free, (DBusError *error), (error))
+DBUS_WRAP_RET(dbus_bool_t, dbus_error_has_name,
          (const DBusError *error, const char *name), (error, name), 0)
-WRAP_RET(dbus_bool_t, dbus_error_is_set, (const DBusError *error),
+DBUS_WRAP_RET(dbus_bool_t, dbus_error_is_set, (const DBusError *error),
          (error), 0)
-WRAP_VOID(dbus_move_error, (DBusError *src, DBusError *dest),
+DBUS_WRAP_VOID(dbus_move_error, (DBusError *src, DBusError *dest),
           (src, dest))
-WRAP_VOID(dbus_set_error_const,
+DBUS_WRAP_VOID(dbus_set_error_const,
           (DBusError *error, const char *name, const char *message),
           (error, name, message))
-WRAP_RET(dbus_bool_t, dbus_set_error_from_message,
+DBUS_WRAP_RET(dbus_bool_t, dbus_set_error_from_message,
          (DBusError *error, DBusMessage *message), (error, message), 0)
 
 /* dbus_set_error 的 message 是 printf 格式串（可变参数），无法直传。
@@ -653,7 +653,7 @@ void dbus_set_error(DBusError *error, const char *name,
     char buf[1024];
     if (!fn) {
         if (!dbus_libok()) return;
-        *(void **)(&fn) = get_sym(dbus_handle_lib, "dbus_set_error");
+        *(void **)(&fn) = dbus_get_sym(dbus_handle_lib, "dbus_set_error");
         if (!fn) {
             fprintf(stderr, "dbus_dyn: dlsym failed: dbus_set_error\n");
             return;
@@ -673,26 +673,26 @@ void dbus_set_error(DBusError *error, const char *name,
 /* ============================================================
  * Memory
  * ============================================================ */
-WRAP_RET(void *, dbus_malloc, (size_t bytes), (bytes), NULL)
-WRAP_RET(void *, dbus_malloc0, (size_t bytes), (bytes), NULL)
-WRAP_RET(void *, dbus_realloc, (void *memory, size_t bytes),
+DBUS_WRAP_RET(void *, dbus_malloc, (size_t bytes), (bytes), NULL)
+DBUS_WRAP_RET(void *, dbus_malloc0, (size_t bytes), (bytes), NULL)
+DBUS_WRAP_RET(void *, dbus_realloc, (void *memory, size_t bytes),
          (memory, bytes), NULL)
-WRAP_VOID(dbus_free, (void *memory), (memory))
-WRAP_VOID(dbus_free_string_array, (char **str_array), (str_array))
-WRAP_VOID(dbus_shutdown, (void), ())
+DBUS_WRAP_VOID(dbus_free, (void *memory), (memory))
+DBUS_WRAP_VOID(dbus_free_string_array, (char **str_array), (str_array))
+DBUS_WRAP_VOID(dbus_shutdown, (void), ())
 
 /* ============================================================
  * Misc
  * ============================================================ */
-WRAP_RET(char *, dbus_get_local_machine_id, (void), (), NULL)
-WRAP_RET(char *, dbus_try_get_local_machine_id, (DBusError *error),
+DBUS_WRAP_RET(char *, dbus_get_local_machine_id, (void), (), NULL)
+DBUS_WRAP_RET(char *, dbus_try_get_local_machine_id, (DBusError *error),
          (error), NULL)
-WRAP_RET(dbus_bool_t, dbus_setenv,
+DBUS_WRAP_RET(dbus_bool_t, dbus_setenv,
          (const char *variable, const char *value), (variable, value), 0)
 
 void dbus_get_version(int *major_version_p, int *minor_version_p,
                       int *micro_version_p) {
-    if (init_state == 0) dbus_libok();
+    if (dbus_init_state == 0) dbus_libok();
     if (major_version_p) *major_version_p = dbus_lib_major;
     if (minor_version_p) *minor_version_p = dbus_lib_minor;
     if (micro_version_p) *micro_version_p = dbus_lib_micro;
@@ -701,127 +701,127 @@ void dbus_get_version(int *major_version_p, int *minor_version_p,
 /* ============================================================
  * Address
  * ============================================================ */
-WRAP_RET(dbus_bool_t, dbus_parse_address,
+DBUS_WRAP_RET(dbus_bool_t, dbus_parse_address,
          (const char *address, DBusAddressEntry ***entry_result,
           int *array_len, DBusError *error),
          (address, entry_result, array_len, error), 0)
-WRAP_RET(const char *, dbus_address_entry_get_value,
+DBUS_WRAP_RET(const char *, dbus_address_entry_get_value,
          (DBusAddressEntry *entry, const char *key), (entry, key), NULL)
-WRAP_RET(const char *, dbus_address_entry_get_method,
+DBUS_WRAP_RET(const char *, dbus_address_entry_get_method,
          (DBusAddressEntry *entry), (entry), NULL)
-WRAP_VOID(dbus_address_entries_free, (DBusAddressEntry **entries),
+DBUS_WRAP_VOID(dbus_address_entries_free, (DBusAddressEntry **entries),
           (entries))
-WRAP_RET(char *, dbus_address_escape_value, (const char *value),
+DBUS_WRAP_RET(char *, dbus_address_escape_value, (const char *value),
          (value), NULL)
-WRAP_RET(char *, dbus_address_unescape_value,
+DBUS_WRAP_RET(char *, dbus_address_unescape_value,
          (const char *value, DBusError *error), (value, error), NULL)
 
 /* ============================================================
  * Bus
  * ============================================================ */
-WRAP_RET(DBusConnection *, dbus_bus_get,
+DBUS_WRAP_RET(DBusConnection *, dbus_bus_get,
          (int type, DBusError *error), (type, error), NULL)
-WRAP_RET(DBusConnection *, dbus_bus_get_private,
+DBUS_WRAP_RET(DBusConnection *, dbus_bus_get_private,
          (int type, DBusError *error), (type, error), NULL)
-WRAP_RET(dbus_bool_t, dbus_bus_register,
+DBUS_WRAP_RET(dbus_bool_t, dbus_bus_register,
          (DBusConnection *connection, DBusError *error),
          (connection, error), 0)
-WRAP_RET(dbus_bool_t, dbus_bus_set_unique_name,
+DBUS_WRAP_RET(dbus_bool_t, dbus_bus_set_unique_name,
          (DBusConnection *connection, const char *unique_name),
          (connection, unique_name), 0)
-WRAP_RET(const char *, dbus_bus_get_unique_name,
+DBUS_WRAP_RET(const char *, dbus_bus_get_unique_name,
          (DBusConnection *connection), (connection), NULL)
-WRAP_RET(unsigned long, dbus_bus_get_unix_user,
+DBUS_WRAP_RET(unsigned long, dbus_bus_get_unix_user,
          (DBusConnection *connection, const char *name, DBusError *error),
          (connection, name, error), 0)
-WRAP_RET(char *, dbus_bus_get_id,
+DBUS_WRAP_RET(char *, dbus_bus_get_id,
          (DBusConnection *connection, DBusError *error),
          (connection, error), NULL)
-WRAP_RET(int, dbus_bus_request_name,
+DBUS_WRAP_RET(int, dbus_bus_request_name,
          (DBusConnection *connection, const char *name, unsigned int flags,
           DBusError *error),
          (connection, name, flags, error), -1)
-WRAP_RET(int, dbus_bus_release_name,
+DBUS_WRAP_RET(int, dbus_bus_release_name,
          (DBusConnection *connection, const char *name, DBusError *error),
          (connection, name, error), -1)
-WRAP_RET(dbus_bool_t, dbus_bus_name_has_owner,
+DBUS_WRAP_RET(dbus_bool_t, dbus_bus_name_has_owner,
          (DBusConnection *connection, const char *name, DBusError *error),
          (connection, name, error), 0)
-WRAP_RET(dbus_bool_t, dbus_bus_start_service_by_name,
+DBUS_WRAP_RET(dbus_bool_t, dbus_bus_start_service_by_name,
          (DBusConnection *connection, const char *name, dbus_uint32_t flags,
           dbus_uint32_t *reply, DBusError *error),
          (connection, name, flags, reply, error), 0)
-WRAP_VOID(dbus_bus_add_match,
+DBUS_WRAP_VOID(dbus_bus_add_match,
           (DBusConnection *connection, const char *rule, DBusError *error),
           (connection, rule, error))
-WRAP_VOID(dbus_bus_remove_match,
+DBUS_WRAP_VOID(dbus_bus_remove_match,
           (DBusConnection *connection, const char *rule, DBusError *error),
           (connection, rule, error))
 
 /* ============================================================
  * Connection：生命周期 / 状态
  * ============================================================ */
-WRAP_RET(DBusConnection *, dbus_connection_open,
+DBUS_WRAP_RET(DBusConnection *, dbus_connection_open,
          (const char *address, DBusError *error), (address, error), NULL)
-WRAP_RET(DBusConnection *, dbus_connection_open_private,
+DBUS_WRAP_RET(DBusConnection *, dbus_connection_open_private,
          (const char *address, DBusError *error), (address, error), NULL)
-WRAP_RET(DBusConnection *, dbus_connection_ref,
+DBUS_WRAP_RET(DBusConnection *, dbus_connection_ref,
          (DBusConnection *connection), (connection), NULL)
-WRAP_VOID(dbus_connection_unref, (DBusConnection *connection),
+DBUS_WRAP_VOID(dbus_connection_unref, (DBusConnection *connection),
           (connection))
-WRAP_VOID(dbus_connection_close, (DBusConnection *connection),
+DBUS_WRAP_VOID(dbus_connection_close, (DBusConnection *connection),
           (connection))
-WRAP_RET(dbus_bool_t, dbus_connection_get_is_connected,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_is_connected,
          (DBusConnection *connection), (connection), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_is_authenticated,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_is_authenticated,
          (DBusConnection *connection), (connection), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_is_anonymous,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_is_anonymous,
          (DBusConnection *connection), (connection), 0)
-WRAP_RET(char *, dbus_connection_get_server_id,
+DBUS_WRAP_RET(char *, dbus_connection_get_server_id,
          (DBusConnection *connection), (connection), NULL)
-WRAP_RET(dbus_bool_t, dbus_connection_can_send_type,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_can_send_type,
          (DBusConnection *connection, int type), (connection, type), 0)
-WRAP_VOID(dbus_connection_set_exit_on_disconnect,
+DBUS_WRAP_VOID(dbus_connection_set_exit_on_disconnect,
           (DBusConnection *connection, dbus_bool_t exit_on_disconnect),
           (connection, exit_on_disconnect))
-WRAP_VOID(dbus_connection_flush, (DBusConnection *connection),
+DBUS_WRAP_VOID(dbus_connection_flush, (DBusConnection *connection),
           (connection))
-WRAP_RET(dbus_bool_t, dbus_connection_read_write_dispatch,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_read_write_dispatch,
          (DBusConnection *connection, int timeout_milliseconds),
          (connection, timeout_milliseconds), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_read_write,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_read_write,
          (DBusConnection *connection, int timeout_milliseconds),
          (connection, timeout_milliseconds), 0)
 
 /* ============================================================
  * Connection：消息收发
  * ============================================================ */
-WRAP_RET(DBusMessage *, dbus_connection_borrow_message,
+DBUS_WRAP_RET(DBusMessage *, dbus_connection_borrow_message,
          (DBusConnection *connection), (connection), NULL)
-WRAP_VOID(dbus_connection_return_message,
+DBUS_WRAP_VOID(dbus_connection_return_message,
           (DBusConnection *connection, DBusMessage *message),
           (connection, message))
-WRAP_VOID(dbus_connection_steal_borrowed_message,
+DBUS_WRAP_VOID(dbus_connection_steal_borrowed_message,
           (DBusConnection *connection, DBusMessage *message),
           (connection, message))
-WRAP_RET(DBusMessage *, dbus_connection_pop_message,
+DBUS_WRAP_RET(DBusMessage *, dbus_connection_pop_message,
          (DBusConnection *connection), (connection), NULL)
-WRAP_RET(int, dbus_connection_get_dispatch_status,
+DBUS_WRAP_RET(int, dbus_connection_get_dispatch_status,
          (DBusConnection *connection), (connection),
          DBUS_DYN_DISPATCH_COMPLETE)
-WRAP_RET(int, dbus_connection_dispatch, (DBusConnection *connection),
+DBUS_WRAP_RET(int, dbus_connection_dispatch, (DBusConnection *connection),
          (connection), DBUS_DYN_DISPATCH_COMPLETE)
-WRAP_RET(dbus_bool_t, dbus_connection_has_messages_to_send,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_has_messages_to_send,
          (DBusConnection *connection), (connection), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_send,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_send,
          (DBusConnection *connection, DBusMessage *message,
           dbus_uint32_t *client_serial),
          (connection, message, client_serial), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_send_with_reply,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_send_with_reply,
          (DBusConnection *connection, DBusMessage *message,
           DBusPendingCall **pending_return, int timeout_milliseconds),
          (connection, message, pending_return, timeout_milliseconds), 0)
-WRAP_RET(DBusMessage *, dbus_connection_send_with_reply_and_block,
+DBUS_WRAP_RET(DBusMessage *, dbus_connection_send_with_reply_and_block,
          (DBusConnection *connection, DBusMessage *message,
           int timeout_milliseconds, DBusError *error),
          (connection, message, timeout_milliseconds, error), NULL)
@@ -829,14 +829,14 @@ WRAP_RET(DBusMessage *, dbus_connection_send_with_reply_and_block,
 /* ============================================================
  * Connection：watch / timeout / 过滤 / 用户函数
  * ============================================================ */
-WRAP_RET(dbus_bool_t, dbus_connection_set_watch_functions,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_set_watch_functions,
          (DBusConnection *connection, DBusAddWatchFunction add_function,
           DBusRemoveWatchFunction remove_function,
           DBusWatchToggledFunction toggled_function, void *data,
           DBusFreeFunction free_data_function),
          (connection, add_function, remove_function, toggled_function,
           data, free_data_function), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_set_timeout_functions,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_set_timeout_functions,
          (DBusConnection *connection,
           DBusAddTimeoutFunction add_function,
           DBusRemoveTimeoutFunction remove_function,
@@ -844,54 +844,54 @@ WRAP_RET(dbus_bool_t, dbus_connection_set_timeout_functions,
           DBusFreeFunction free_data_function),
          (connection, add_function, remove_function, toggled_function,
           data, free_data_function), 0)
-WRAP_VOID(dbus_connection_set_wakeup_main_function,
+DBUS_WRAP_VOID(dbus_connection_set_wakeup_main_function,
           (DBusConnection *connection,
            DBusWakeupMainFunction wakeup_main_function, void *data,
            DBusFreeFunction free_data_function),
           (connection, wakeup_main_function, data, free_data_function))
-WRAP_VOID(dbus_connection_set_dispatch_status_function,
+DBUS_WRAP_VOID(dbus_connection_set_dispatch_status_function,
           (DBusConnection *connection,
            DBusDispatchStatusFunction function, void *data,
            DBusFreeFunction free_data_function),
           (connection, function, data, free_data_function))
-WRAP_RET(dbus_bool_t, dbus_connection_get_unix_user,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_unix_user,
          (DBusConnection *connection, unsigned long *uid),
          (connection, uid), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_unix_process_id,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_unix_process_id,
          (DBusConnection *connection, unsigned long *pid),
          (connection, pid), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_adt_audit_session_data,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_adt_audit_session_data,
          (DBusConnection *connection, void **data,
           dbus_int32_t *data_size),
          (connection, data, data_size), 0)
-WRAP_VOID(dbus_connection_set_unix_user_function,
+DBUS_WRAP_VOID(dbus_connection_set_unix_user_function,
           (DBusConnection *connection,
            DBusAllowUnixUserFunction function, void *data,
            DBusFreeFunction free_data_function),
           (connection, function, data, free_data_function))
-WRAP_RET(dbus_bool_t, dbus_connection_get_windows_user,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_windows_user,
          (DBusConnection *connection, char **windows_sid_p),
          (connection, windows_sid_p), 0)
-WRAP_VOID(dbus_connection_set_windows_user_function,
+DBUS_WRAP_VOID(dbus_connection_set_windows_user_function,
           (DBusConnection *connection,
            DBusAllowWindowsUserFunction function, void *data,
            DBusFreeFunction free_data_function),
           (connection, function, data, free_data_function))
-WRAP_VOID(dbus_connection_set_allow_anonymous,
+DBUS_WRAP_VOID(dbus_connection_set_allow_anonymous,
           (DBusConnection *connection, dbus_bool_t value),
           (connection, value))
-WRAP_VOID(dbus_connection_set_builtin_filters_enabled,
+DBUS_WRAP_VOID(dbus_connection_set_builtin_filters_enabled,
           (DBusConnection *connection, dbus_bool_t value),
           (connection, value))
-WRAP_VOID(dbus_connection_set_route_peer_messages,
+DBUS_WRAP_VOID(dbus_connection_set_route_peer_messages,
           (DBusConnection *connection, dbus_bool_t value),
           (connection, value))
-WRAP_RET(dbus_bool_t, dbus_connection_add_filter,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_add_filter,
          (DBusConnection *connection,
           DBusHandleMessageFunction function, void *user_data,
           DBusFreeFunction free_data_function),
          (connection, function, user_data, free_data_function), 0)
-WRAP_VOID(dbus_connection_remove_filter,
+DBUS_WRAP_VOID(dbus_connection_remove_filter,
           (DBusConnection *connection,
            DBusHandleMessageFunction function, void *user_data),
           (connection, function, user_data))
@@ -899,137 +899,137 @@ WRAP_VOID(dbus_connection_remove_filter,
 /* ============================================================
  * Connection：data slot / 限额 / 预分配 / 对象树 / fd
  * ============================================================ */
-WRAP_RET(dbus_bool_t, dbus_connection_allocate_data_slot,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_allocate_data_slot,
          (dbus_int32_t *slot_p), (slot_p), 0)
-WRAP_VOID(dbus_connection_free_data_slot, (dbus_int32_t *slot_p),
+DBUS_WRAP_VOID(dbus_connection_free_data_slot, (dbus_int32_t *slot_p),
           (slot_p))
-WRAP_RET(dbus_bool_t, dbus_connection_set_data,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_set_data,
          (DBusConnection *connection, dbus_int32_t slot, void *data,
           DBusFreeFunction free_data_func),
          (connection, slot, data, free_data_func), 0)
-WRAP_RET(void *, dbus_connection_get_data,
+DBUS_WRAP_RET(void *, dbus_connection_get_data,
          (DBusConnection *connection, dbus_int32_t slot),
          (connection, slot), NULL)
-WRAP_VOID(dbus_connection_set_change_sigpipe,
+DBUS_WRAP_VOID(dbus_connection_set_change_sigpipe,
           (dbus_bool_t will_modify_sigpipe), (will_modify_sigpipe))
-WRAP_VOID(dbus_connection_set_max_message_size,
+DBUS_WRAP_VOID(dbus_connection_set_max_message_size,
           (DBusConnection *connection, long size), (connection, size))
-WRAP_RET(long, dbus_connection_get_max_message_size,
+DBUS_WRAP_RET(long, dbus_connection_get_max_message_size,
          (DBusConnection *connection), (connection), -1)
-WRAP_VOID(dbus_connection_set_max_received_size,
+DBUS_WRAP_VOID(dbus_connection_set_max_received_size,
           (DBusConnection *connection, long size), (connection, size))
-WRAP_RET(long, dbus_connection_get_max_received_size,
+DBUS_WRAP_RET(long, dbus_connection_get_max_received_size,
          (DBusConnection *connection), (connection), -1)
-WRAP_VOID(dbus_connection_set_max_message_unix_fds,
+DBUS_WRAP_VOID(dbus_connection_set_max_message_unix_fds,
           (DBusConnection *connection, long n), (connection, n))
-WRAP_RET(long, dbus_connection_get_max_message_unix_fds,
+DBUS_WRAP_RET(long, dbus_connection_get_max_message_unix_fds,
          (DBusConnection *connection), (connection), -1)
-WRAP_VOID(dbus_connection_set_max_received_unix_fds,
+DBUS_WRAP_VOID(dbus_connection_set_max_received_unix_fds,
           (DBusConnection *connection, long n), (connection, n))
-WRAP_RET(long, dbus_connection_get_max_received_unix_fds,
+DBUS_WRAP_RET(long, dbus_connection_get_max_received_unix_fds,
          (DBusConnection *connection), (connection), -1)
-WRAP_RET(long, dbus_connection_get_outgoing_size,
+DBUS_WRAP_RET(long, dbus_connection_get_outgoing_size,
          (DBusConnection *connection), (connection), -1)
-WRAP_RET(long, dbus_connection_get_outgoing_unix_fds,
+DBUS_WRAP_RET(long, dbus_connection_get_outgoing_unix_fds,
          (DBusConnection *connection), (connection), -1)
-WRAP_RET(DBusPreallocatedSend *, dbus_connection_preallocate_send,
+DBUS_WRAP_RET(DBusPreallocatedSend *, dbus_connection_preallocate_send,
          (DBusConnection *connection), (connection), NULL)
-WRAP_VOID(dbus_connection_free_preallocated_send,
+DBUS_WRAP_VOID(dbus_connection_free_preallocated_send,
           (DBusConnection *connection,
            DBusPreallocatedSend *preallocated),
           (connection, preallocated))
-WRAP_VOID(dbus_connection_send_preallocated,
+DBUS_WRAP_VOID(dbus_connection_send_preallocated,
           (DBusConnection *connection,
            DBusPreallocatedSend *preallocated, DBusMessage *message,
            dbus_uint32_t *client_serial),
           (connection, preallocated, message, client_serial))
-WRAP_RET(dbus_bool_t, dbus_connection_try_register_object_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_try_register_object_path,
          (DBusConnection *connection, const char *path,
           const DBusObjectPathVTable *vtable, void *user_data,
           DBusError *error),
          (connection, path, vtable, user_data, error), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_register_object_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_register_object_path,
          (DBusConnection *connection, const char *path,
           const DBusObjectPathVTable *vtable, void *user_data),
          (connection, path, vtable, user_data), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_try_register_fallback,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_try_register_fallback,
          (DBusConnection *connection, const char *path,
           const DBusObjectPathVTable *vtable, void *user_data,
           DBusError *error),
          (connection, path, vtable, user_data, error), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_register_fallback,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_register_fallback,
          (DBusConnection *connection, const char *path,
           const DBusObjectPathVTable *vtable, void *user_data),
          (connection, path, vtable, user_data), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_unregister_object_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_unregister_object_path,
          (DBusConnection *connection, const char *path),
          (connection, path), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_object_path_data,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_object_path_data,
          (DBusConnection *connection, const char *path, void **data_p),
          (connection, path, data_p), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_list_registered,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_list_registered,
          (DBusConnection *connection, const char *parent_path,
           char ***child_entries),
          (connection, parent_path, child_entries), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_unix_fd,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_unix_fd,
          (DBusConnection *connection, int *fd), (connection, fd), 0)
-WRAP_RET(dbus_bool_t, dbus_connection_get_socket,
+DBUS_WRAP_RET(dbus_bool_t, dbus_connection_get_socket,
          (DBusConnection *connection, int *fd), (connection, fd), 0)
 
 /* ============================================================
  * Watch / Timeout
  * ============================================================ */
-WRAP_RET(int, dbus_watch_get_fd, (DBusWatch *watch), (watch), -1)
-WRAP_RET(int, dbus_watch_get_unix_fd, (DBusWatch *watch), (watch), -1)
-WRAP_RET(int, dbus_watch_get_socket, (DBusWatch *watch), (watch), -1)
-WRAP_RET(unsigned int, dbus_watch_get_flags, (DBusWatch *watch),
+DBUS_WRAP_RET(int, dbus_watch_get_fd, (DBusWatch *watch), (watch), -1)
+DBUS_WRAP_RET(int, dbus_watch_get_unix_fd, (DBusWatch *watch), (watch), -1)
+DBUS_WRAP_RET(int, dbus_watch_get_socket, (DBusWatch *watch), (watch), -1)
+DBUS_WRAP_RET(unsigned int, dbus_watch_get_flags, (DBusWatch *watch),
          (watch), 0)
-WRAP_RET(void *, dbus_watch_get_data, (DBusWatch *watch), (watch), NULL)
-WRAP_VOID(dbus_watch_set_data,
+DBUS_WRAP_RET(void *, dbus_watch_get_data, (DBusWatch *watch), (watch), NULL)
+DBUS_WRAP_VOID(dbus_watch_set_data,
           (DBusWatch *watch, void *data,
            DBusFreeFunction free_data_function),
           (watch, data, free_data_function))
-WRAP_RET(dbus_bool_t, dbus_watch_handle,
+DBUS_WRAP_RET(dbus_bool_t, dbus_watch_handle,
          (DBusWatch *watch, unsigned int flags), (watch, flags), 0)
-WRAP_RET(dbus_bool_t, dbus_watch_get_enabled, (DBusWatch *watch),
+DBUS_WRAP_RET(dbus_bool_t, dbus_watch_get_enabled, (DBusWatch *watch),
          (watch), 0)
-WRAP_RET(int, dbus_timeout_get_interval, (DBusTimeout *timeout),
+DBUS_WRAP_RET(int, dbus_timeout_get_interval, (DBusTimeout *timeout),
          (timeout), -1)
-WRAP_RET(void *, dbus_timeout_get_data, (DBusTimeout *timeout),
+DBUS_WRAP_RET(void *, dbus_timeout_get_data, (DBusTimeout *timeout),
          (timeout), NULL)
-WRAP_VOID(dbus_timeout_set_data,
+DBUS_WRAP_VOID(dbus_timeout_set_data,
           (DBusTimeout *timeout, void *data,
            DBusFreeFunction free_data_function),
           (timeout, data, free_data_function))
-WRAP_RET(dbus_bool_t, dbus_timeout_handle, (DBusTimeout *timeout),
+DBUS_WRAP_RET(dbus_bool_t, dbus_timeout_handle, (DBusTimeout *timeout),
          (timeout), 0)
-WRAP_RET(dbus_bool_t, dbus_timeout_get_enabled, (DBusTimeout *timeout),
+DBUS_WRAP_RET(dbus_bool_t, dbus_timeout_get_enabled, (DBusTimeout *timeout),
          (timeout), 0)
 
 /* ============================================================
  * Message：创建 / 生命周期
  * ============================================================ */
-WRAP_RET(DBusMessage *, dbus_message_new, (int message_type),
+DBUS_WRAP_RET(DBusMessage *, dbus_message_new, (int message_type),
          (message_type), NULL)
-WRAP_RET(DBusMessage *, dbus_message_new_method_call,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_new_method_call,
          (const char *bus_name, const char *path, const char *iface,
           const char *method),
          (bus_name, path, iface, method), NULL)
-WRAP_RET(DBusMessage *, dbus_message_new_method_return,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_new_method_return,
          (DBusMessage *method_call), (method_call), NULL)
-WRAP_RET(DBusMessage *, dbus_message_new_signal,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_new_signal,
          (const char *path, const char *iface, const char *name),
          (path, iface, name), NULL)
-WRAP_RET(DBusMessage *, dbus_message_new_error,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_new_error,
          (DBusMessage *reply_to, const char *error_name,
           const char *error_message),
          (reply_to, error_name, error_message), NULL)
-WRAP_RET(DBusMessage *, dbus_message_copy,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_copy,
          (const DBusMessage *message), (message), NULL)
-WRAP_RET(DBusMessage *, dbus_message_ref, (DBusMessage *message),
+DBUS_WRAP_RET(DBusMessage *, dbus_message_ref, (DBusMessage *message),
          (message), NULL)
-WRAP_VOID(dbus_message_unref, (DBusMessage *message), (message))
-WRAP_VOID(dbus_message_lock, (DBusMessage *message), (message))
+DBUS_WRAP_VOID(dbus_message_unref, (DBusMessage *message), (message))
+DBUS_WRAP_VOID(dbus_message_lock, (DBusMessage *message), (message))
 
 /* dbus_message_new_error_printf：printf 风格可变参数无法直传。
  * 策略：自行格式化后以 "%s" 调用原函数。 */
@@ -1043,7 +1043,7 @@ DBusMessage *dbus_message_new_error_printf(
     if (!fn) {
         if (!dbus_libok()) return NULL;
         *(void **)(&fn) =
-            get_sym(dbus_handle_lib, "dbus_message_new_error_printf");
+            dbus_get_sym(dbus_handle_lib, "dbus_message_new_error_printf");
         if (!fn) {
             fprintf(stderr, "dbus_dyn: dlsym failed: "
                             "dbus_message_new_error_printf\n");
@@ -1059,94 +1059,94 @@ DBusMessage *dbus_message_new_error_printf(
 /* ============================================================
  * Message：头字段
  * ============================================================ */
-WRAP_RET(int, dbus_message_get_type, (DBusMessage *message),
+DBUS_WRAP_RET(int, dbus_message_get_type, (DBusMessage *message),
          (message), DBUS_DYN_MESSAGE_TYPE_INVALID)
-WRAP_RET(dbus_bool_t, dbus_message_set_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_path,
          (DBusMessage *message, const char *object_path),
          (message, object_path), 0)
-WRAP_RET(const char *, dbus_message_get_path, (DBusMessage *message),
+DBUS_WRAP_RET(const char *, dbus_message_get_path, (DBusMessage *message),
          (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_has_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_path,
          (DBusMessage *message, const char *object_path),
          (message, object_path), 0)
-WRAP_RET(dbus_bool_t, dbus_message_set_interface,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_interface,
          (DBusMessage *message, const char *iface), (message, iface), 0)
-WRAP_RET(const char *, dbus_message_get_interface,
+DBUS_WRAP_RET(const char *, dbus_message_get_interface,
          (DBusMessage *message), (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_has_interface,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_interface,
          (DBusMessage *message, const char *iface), (message, iface), 0)
-WRAP_RET(dbus_bool_t, dbus_message_set_member,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_member,
          (DBusMessage *message, const char *member), (message, member), 0)
-WRAP_RET(const char *, dbus_message_get_member, (DBusMessage *message),
+DBUS_WRAP_RET(const char *, dbus_message_get_member, (DBusMessage *message),
          (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_has_member,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_member,
          (DBusMessage *message, const char *member), (message, member), 0)
-WRAP_RET(dbus_bool_t, dbus_message_set_error_name,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_error_name,
          (DBusMessage *message, const char *name), (message, name), 0)
-WRAP_RET(const char *, dbus_message_get_error_name,
+DBUS_WRAP_RET(const char *, dbus_message_get_error_name,
          (DBusMessage *message), (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_set_destination,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_destination,
          (DBusMessage *message, const char *destination),
          (message, destination), 0)
-WRAP_RET(const char *, dbus_message_get_destination,
+DBUS_WRAP_RET(const char *, dbus_message_get_destination,
          (DBusMessage *message), (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_set_sender,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_sender,
          (DBusMessage *message, const char *sender), (message, sender), 0)
-WRAP_RET(const char *, dbus_message_get_sender, (DBusMessage *message),
+DBUS_WRAP_RET(const char *, dbus_message_get_sender, (DBusMessage *message),
          (message), NULL)
-WRAP_RET(const char *, dbus_message_get_signature,
+DBUS_WRAP_RET(const char *, dbus_message_get_signature,
          (DBusMessage *message), (message), NULL)
-WRAP_VOID(dbus_message_set_no_reply,
+DBUS_WRAP_VOID(dbus_message_set_no_reply,
           (DBusMessage *message, dbus_bool_t no_reply),
           (message, no_reply))
-WRAP_RET(dbus_bool_t, dbus_message_get_no_reply, (DBusMessage *message),
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_get_no_reply, (DBusMessage *message),
          (message), 0)
-WRAP_RET(dbus_bool_t, dbus_message_is_method_call,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_is_method_call,
          (DBusMessage *message, const char *iface, const char *method),
          (message, iface, method), 0)
-WRAP_RET(dbus_bool_t, dbus_message_is_signal,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_is_signal,
          (DBusMessage *message, const char *iface,
           const char *signal_name),
          (message, iface, signal_name), 0)
-WRAP_RET(dbus_bool_t, dbus_message_is_error,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_is_error,
          (DBusMessage *message, const char *error_name),
          (message, error_name), 0)
-WRAP_RET(dbus_bool_t, dbus_message_has_destination,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_destination,
          (DBusMessage *message, const char *bus_name),
          (message, bus_name), 0)
-WRAP_RET(dbus_bool_t, dbus_message_has_sender,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_sender,
          (DBusMessage *message, const char *unique_bus_name),
          (message, unique_bus_name), 0)
-WRAP_RET(dbus_bool_t, dbus_message_has_signature,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_has_signature,
          (DBusMessage *message, const char *signature),
          (message, signature), 0)
-WRAP_RET(dbus_uint32_t, dbus_message_get_serial, (DBusMessage *message),
+DBUS_WRAP_RET(dbus_uint32_t, dbus_message_get_serial, (DBusMessage *message),
          (message), 0)
-WRAP_VOID(dbus_message_set_serial,
+DBUS_WRAP_VOID(dbus_message_set_serial,
           (DBusMessage *message, dbus_uint32_t serial),
           (message, serial))
-WRAP_RET(dbus_bool_t, dbus_message_set_reply_serial,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_reply_serial,
          (DBusMessage *message, dbus_uint32_t reply_serial),
          (message, reply_serial), 0)
-WRAP_RET(dbus_uint32_t, dbus_message_get_reply_serial,
+DBUS_WRAP_RET(dbus_uint32_t, dbus_message_get_reply_serial,
          (DBusMessage *message), (message), 0)
-WRAP_VOID(dbus_message_set_auto_start,
+DBUS_WRAP_VOID(dbus_message_set_auto_start,
           (DBusMessage *message, dbus_bool_t auto_start),
           (message, auto_start))
-WRAP_RET(dbus_bool_t, dbus_message_get_auto_start,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_get_auto_start,
          (DBusMessage *message), (message), 0)
-WRAP_RET(dbus_bool_t, dbus_message_get_path_decomposed,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_get_path_decomposed,
          (DBusMessage *message, char ***path), (message, path), 0)
-WRAP_RET(const char *, dbus_message_get_container_instance,
+DBUS_WRAP_RET(const char *, dbus_message_get_container_instance,
          (DBusMessage *message), (message), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_set_container_instance,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_container_instance,
          (DBusMessage *message, const char *object_path),
          (message, object_path), 0)
-WRAP_VOID(dbus_message_set_allow_interactive_authorization,
+DBUS_WRAP_VOID(dbus_message_set_allow_interactive_authorization,
           (DBusMessage *message, dbus_bool_t allow), (message, allow))
-WRAP_RET(dbus_bool_t, dbus_message_get_allow_interactive_authorization,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_get_allow_interactive_authorization,
          (DBusMessage *message), (message), 0)
-WRAP_RET(dbus_bool_t, dbus_message_contains_unix_fds,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_contains_unix_fds,
          (DBusMessage *message), (message), 0)
 
 /* ============================================================
@@ -1162,7 +1162,7 @@ dbus_bool_t dbus_message_append_args(DBusMessage *message,
     if (!fn) {
         if (!dbus_libok()) return 0;
         *(void **)(&fn) =
-            get_sym(dbus_handle_lib, "dbus_message_append_args_valist");
+            dbus_get_sym(dbus_handle_lib, "dbus_message_append_args_valist");
         if (!fn) {
             fprintf(stderr, "dbus_dyn: dlsym failed: "
                             "dbus_message_append_args_valist\n");
@@ -1184,7 +1184,7 @@ dbus_bool_t dbus_message_get_args(DBusMessage *message, DBusError *error,
     if (!fn) {
         if (!dbus_libok()) return 0;
         *(void **)(&fn) =
-            get_sym(dbus_handle_lib, "dbus_message_get_args_valist");
+            dbus_get_sym(dbus_handle_lib, "dbus_message_get_args_valist");
         if (!fn) {
             fprintf(stderr, "dbus_dyn: dlsym failed: "
                             "dbus_message_get_args_valist\n");
@@ -1197,202 +1197,202 @@ dbus_bool_t dbus_message_get_args(DBusMessage *message, DBusError *error,
     return r;
 }
 
-WRAP_RET(dbus_bool_t, dbus_message_append_args_valist,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_append_args_valist,
          (DBusMessage *message, int first_arg_type, va_list var_args),
          (message, first_arg_type, var_args), 0)
-WRAP_RET(dbus_bool_t, dbus_message_get_args_valist,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_get_args_valist,
          (DBusMessage *message, DBusError *error, int first_arg_type,
           va_list var_args),
          (message, error, first_arg_type, var_args), 0)
 
-WRAP_VOID(dbus_message_iter_init_closed, (DBusMessageIter *iter),
+DBUS_WRAP_VOID(dbus_message_iter_init_closed, (DBusMessageIter *iter),
           (iter))
-WRAP_RET(dbus_bool_t, dbus_message_iter_init,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_init,
          (DBusMessage *message, DBusMessageIter *iter),
          (message, iter), 0)
-WRAP_RET(dbus_bool_t, dbus_message_iter_has_next,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_has_next,
          (DBusMessageIter *iter), (iter), 0)
-WRAP_RET(dbus_bool_t, dbus_message_iter_next, (DBusMessageIter *iter),
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_next, (DBusMessageIter *iter),
          (iter), 0)
-WRAP_RET(char *, dbus_message_iter_get_signature, (DBusMessageIter *iter),
+DBUS_WRAP_RET(char *, dbus_message_iter_get_signature, (DBusMessageIter *iter),
          (iter), NULL)
-WRAP_RET(int, dbus_message_iter_get_arg_type, (DBusMessageIter *iter),
+DBUS_WRAP_RET(int, dbus_message_iter_get_arg_type, (DBusMessageIter *iter),
          (iter), DBUS_DYN_TYPE_INVALID)
-WRAP_RET(int, dbus_message_iter_get_element_type,
+DBUS_WRAP_RET(int, dbus_message_iter_get_element_type,
          (DBusMessageIter *iter), (iter), DBUS_DYN_TYPE_INVALID)
-WRAP_VOID(dbus_message_iter_recurse,
+DBUS_WRAP_VOID(dbus_message_iter_recurse,
           (DBusMessageIter *iter, DBusMessageIter *sub), (iter, sub))
-WRAP_VOID(dbus_message_iter_get_basic,
+DBUS_WRAP_VOID(dbus_message_iter_get_basic,
           (DBusMessageIter *iter, void *value), (iter, value))
-WRAP_RET(int, dbus_message_iter_get_element_count,
+DBUS_WRAP_RET(int, dbus_message_iter_get_element_count,
          (DBusMessageIter *iter), (iter), -1)
-WRAP_RET(int, dbus_message_iter_get_array_len, (DBusMessageIter *iter),
+DBUS_WRAP_RET(int, dbus_message_iter_get_array_len, (DBusMessageIter *iter),
          (iter), -1)
-WRAP_VOID(dbus_message_iter_get_fixed_array,
+DBUS_WRAP_VOID(dbus_message_iter_get_fixed_array,
           (DBusMessageIter *iter, void *value, int *n_elements),
           (iter, value, n_elements))
-WRAP_VOID(dbus_message_iter_init_append,
+DBUS_WRAP_VOID(dbus_message_iter_init_append,
           (DBusMessage *message, DBusMessageIter *iter), (message, iter))
-WRAP_RET(dbus_bool_t, dbus_message_iter_append_basic,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_append_basic,
          (DBusMessageIter *iter, int type, const void *value),
          (iter, type, value), 0)
-WRAP_RET(dbus_bool_t, dbus_message_iter_append_fixed_array,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_append_fixed_array,
          (DBusMessageIter *iter, int element_type, const void *value,
           int n_elements),
          (iter, element_type, value, n_elements), 0)
-WRAP_RET(dbus_bool_t, dbus_message_iter_open_container,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_open_container,
          (DBusMessageIter *iter, int type, const char *contained_signature,
           DBusMessageIter *sub),
          (iter, type, contained_signature, sub), 0)
-WRAP_RET(dbus_bool_t, dbus_message_iter_close_container,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_iter_close_container,
          (DBusMessageIter *iter, DBusMessageIter *sub), (iter, sub), 0)
-WRAP_VOID(dbus_message_iter_abandon_container,
+DBUS_WRAP_VOID(dbus_message_iter_abandon_container,
           (DBusMessageIter *iter, DBusMessageIter *sub), (iter, sub))
-WRAP_VOID(dbus_message_iter_abandon_container_if_open,
+DBUS_WRAP_VOID(dbus_message_iter_abandon_container_if_open,
           (DBusMessageIter *iter, DBusMessageIter *sub), (iter, sub))
 
 /* ============================================================
  * Message：data slot / marshal / type 转换
  * ============================================================ */
-WRAP_RET(dbus_bool_t, dbus_message_allocate_data_slot,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_allocate_data_slot,
          (dbus_int32_t *slot_p), (slot_p), 0)
-WRAP_VOID(dbus_message_free_data_slot, (dbus_int32_t *slot_p), (slot_p))
-WRAP_RET(dbus_bool_t, dbus_message_set_data,
+DBUS_WRAP_VOID(dbus_message_free_data_slot, (dbus_int32_t *slot_p), (slot_p))
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_set_data,
          (DBusMessage *message, dbus_int32_t slot, void *data,
           DBusFreeFunction free_data_func),
          (message, slot, data, free_data_func), 0)
-WRAP_RET(void *, dbus_message_get_data,
+DBUS_WRAP_RET(void *, dbus_message_get_data,
          (DBusMessage *message, dbus_int32_t slot), (message, slot), NULL)
-WRAP_RET(int, dbus_message_type_from_string, (const char *type_str),
+DBUS_WRAP_RET(int, dbus_message_type_from_string, (const char *type_str),
          (type_str), DBUS_DYN_MESSAGE_TYPE_INVALID)
-WRAP_RET(const char *, dbus_message_type_to_string, (int type),
+DBUS_WRAP_RET(const char *, dbus_message_type_to_string, (int type),
          (type), NULL)
-WRAP_RET(dbus_bool_t, dbus_message_marshal,
+DBUS_WRAP_RET(dbus_bool_t, dbus_message_marshal,
          (DBusMessage *msg, char **marshalled_data_p, int *len_p),
          (msg, marshalled_data_p, len_p), 0)
-WRAP_RET(DBusMessage *, dbus_message_demarshal,
+DBUS_WRAP_RET(DBusMessage *, dbus_message_demarshal,
          (const char *str, int len, DBusError *error),
          (str, len, error), NULL)
-WRAP_RET(int, dbus_message_demarshal_bytes_needed,
+DBUS_WRAP_RET(int, dbus_message_demarshal_bytes_needed,
          (const char *str, int len), (str, len), 0)
 
 /* ============================================================
  * PendingCall
  * ============================================================ */
-WRAP_RET(DBusPendingCall *, dbus_pending_call_ref,
+DBUS_WRAP_RET(DBusPendingCall *, dbus_pending_call_ref,
          (DBusPendingCall *pending), (pending), NULL)
-WRAP_VOID(dbus_pending_call_unref, (DBusPendingCall *pending),
+DBUS_WRAP_VOID(dbus_pending_call_unref, (DBusPendingCall *pending),
           (pending))
-WRAP_RET(dbus_bool_t, dbus_pending_call_set_notify,
+DBUS_WRAP_RET(dbus_bool_t, dbus_pending_call_set_notify,
          (DBusPendingCall *pending,
           DBusPendingCallNotifyFunction function, void *user_data,
           DBusFreeFunction free_user_data),
          (pending, function, user_data, free_user_data), 0)
-WRAP_VOID(dbus_pending_call_cancel, (DBusPendingCall *pending),
+DBUS_WRAP_VOID(dbus_pending_call_cancel, (DBusPendingCall *pending),
           (pending))
-WRAP_RET(dbus_bool_t, dbus_pending_call_get_completed,
+DBUS_WRAP_RET(dbus_bool_t, dbus_pending_call_get_completed,
          (DBusPendingCall *pending), (pending), 0)
-WRAP_RET(DBusMessage *, dbus_pending_call_steal_reply,
+DBUS_WRAP_RET(DBusMessage *, dbus_pending_call_steal_reply,
          (DBusPendingCall *pending), (pending), NULL)
-WRAP_VOID(dbus_pending_call_block, (DBusPendingCall *pending), (pending))
-WRAP_RET(dbus_bool_t, dbus_pending_call_allocate_data_slot,
+DBUS_WRAP_VOID(dbus_pending_call_block, (DBusPendingCall *pending), (pending))
+DBUS_WRAP_RET(dbus_bool_t, dbus_pending_call_allocate_data_slot,
          (dbus_int32_t *slot_p), (slot_p), 0)
-WRAP_VOID(dbus_pending_call_free_data_slot, (dbus_int32_t *slot_p),
+DBUS_WRAP_VOID(dbus_pending_call_free_data_slot, (dbus_int32_t *slot_p),
           (slot_p))
-WRAP_RET(dbus_bool_t, dbus_pending_call_set_data,
+DBUS_WRAP_RET(dbus_bool_t, dbus_pending_call_set_data,
          (DBusPendingCall *pending, dbus_int32_t slot, void *data,
           DBusFreeFunction free_data_func),
          (pending, slot, data, free_data_func), 0)
-WRAP_RET(void *, dbus_pending_call_get_data,
+DBUS_WRAP_RET(void *, dbus_pending_call_get_data,
          (DBusPendingCall *pending, dbus_int32_t slot),
          (pending, slot), NULL)
 
 /* ============================================================
  * Server
  * ============================================================ */
-WRAP_RET(DBusServer *, dbus_server_listen,
+DBUS_WRAP_RET(DBusServer *, dbus_server_listen,
          (const char *address, DBusError *error), (address, error), NULL)
-WRAP_RET(DBusServer *, dbus_server_ref, (DBusServer *server),
+DBUS_WRAP_RET(DBusServer *, dbus_server_ref, (DBusServer *server),
          (server), NULL)
-WRAP_VOID(dbus_server_unref, (DBusServer *server), (server))
-WRAP_VOID(dbus_server_disconnect, (DBusServer *server), (server))
-WRAP_RET(dbus_bool_t, dbus_server_get_is_connected,
+DBUS_WRAP_VOID(dbus_server_unref, (DBusServer *server), (server))
+DBUS_WRAP_VOID(dbus_server_disconnect, (DBusServer *server), (server))
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_get_is_connected,
          (DBusServer *server), (server), 0)
-WRAP_RET(char *, dbus_server_get_address, (DBusServer *server),
+DBUS_WRAP_RET(char *, dbus_server_get_address, (DBusServer *server),
          (server), NULL)
-WRAP_RET(char *, dbus_server_get_id, (DBusServer *server), (server), NULL)
-WRAP_VOID(dbus_server_set_new_connection_function,
+DBUS_WRAP_RET(char *, dbus_server_get_id, (DBusServer *server), (server), NULL)
+DBUS_WRAP_VOID(dbus_server_set_new_connection_function,
           (DBusServer *server, DBusNewConnectionFunction function,
            void *data, DBusFreeFunction free_data_function),
           (server, function, data, free_data_function))
-WRAP_RET(dbus_bool_t, dbus_server_set_watch_functions,
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_set_watch_functions,
          (DBusServer *server, DBusAddWatchFunction add_function,
           DBusRemoveWatchFunction remove_function,
           DBusWatchToggledFunction toggled_function, void *data,
           DBusFreeFunction free_data_function),
          (server, add_function, remove_function, toggled_function, data,
           free_data_function), 0)
-WRAP_RET(dbus_bool_t, dbus_server_set_timeout_functions,
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_set_timeout_functions,
          (DBusServer *server, DBusAddTimeoutFunction add_function,
           DBusRemoveTimeoutFunction remove_function,
           DBusTimeoutToggledFunction toggled_function, void *data,
           DBusFreeFunction free_data_function),
          (server, add_function, remove_function, toggled_function, data,
           free_data_function), 0)
-WRAP_RET(dbus_bool_t, dbus_server_set_auth_mechanisms,
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_set_auth_mechanisms,
          (DBusServer *server, const char **mechanisms),
          (server, mechanisms), 0)
-WRAP_RET(dbus_bool_t, dbus_server_allocate_data_slot,
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_allocate_data_slot,
          (dbus_int32_t *slot_p), (slot_p), 0)
-WRAP_VOID(dbus_server_free_data_slot, (dbus_int32_t *slot_p), (slot_p))
-WRAP_RET(dbus_bool_t, dbus_server_set_data,
+DBUS_WRAP_VOID(dbus_server_free_data_slot, (dbus_int32_t *slot_p), (slot_p))
+DBUS_WRAP_RET(dbus_bool_t, dbus_server_set_data,
          (DBusServer *server, int slot, void *data,
           DBusFreeFunction free_data_func),
          (server, slot, data, free_data_func), 0)
-WRAP_RET(void *, dbus_server_get_data, (DBusServer *server, int slot),
+DBUS_WRAP_RET(void *, dbus_server_get_data, (DBusServer *server, int slot),
          (server, slot), NULL)
 
 /* ============================================================
  * Signature
  * ============================================================ */
-WRAP_VOID(dbus_signature_iter_init,
+DBUS_WRAP_VOID(dbus_signature_iter_init,
           (DBusSignatureIter *iter, const char *signature),
           (iter, signature))
-WRAP_RET(int, dbus_signature_iter_get_current_type,
+DBUS_WRAP_RET(int, dbus_signature_iter_get_current_type,
          (const DBusSignatureIter *iter), (iter), DBUS_DYN_TYPE_INVALID)
-WRAP_RET(char *, dbus_signature_iter_get_signature,
+DBUS_WRAP_RET(char *, dbus_signature_iter_get_signature,
          (const DBusSignatureIter *iter), (iter), NULL)
-WRAP_RET(int, dbus_signature_iter_get_element_type,
+DBUS_WRAP_RET(int, dbus_signature_iter_get_element_type,
          (const DBusSignatureIter *iter), (iter), DBUS_DYN_TYPE_INVALID)
-WRAP_RET(dbus_bool_t, dbus_signature_iter_next,
+DBUS_WRAP_RET(dbus_bool_t, dbus_signature_iter_next,
          (DBusSignatureIter *iter), (iter), 0)
-WRAP_VOID(dbus_signature_iter_recurse,
+DBUS_WRAP_VOID(dbus_signature_iter_recurse,
           (const DBusSignatureIter *iter, DBusSignatureIter *subiter),
           (iter, subiter))
-WRAP_RET(dbus_bool_t, dbus_signature_validate,
+DBUS_WRAP_RET(dbus_bool_t, dbus_signature_validate,
          (const char *signature, DBusError *error), (signature, error), 0)
-WRAP_RET(dbus_bool_t, dbus_signature_validate_single,
+DBUS_WRAP_RET(dbus_bool_t, dbus_signature_validate_single,
          (const char *signature, DBusError *error), (signature, error), 0)
-WRAP_RET(dbus_bool_t, dbus_type_is_valid, (int typecode), (typecode), 0)
-WRAP_RET(dbus_bool_t, dbus_type_is_basic, (int typecode), (typecode), 0)
-WRAP_RET(dbus_bool_t, dbus_type_is_container, (int typecode),
+DBUS_WRAP_RET(dbus_bool_t, dbus_type_is_valid, (int typecode), (typecode), 0)
+DBUS_WRAP_RET(dbus_bool_t, dbus_type_is_basic, (int typecode), (typecode), 0)
+DBUS_WRAP_RET(dbus_bool_t, dbus_type_is_container, (int typecode),
          (typecode), 0)
-WRAP_RET(dbus_bool_t, dbus_type_is_fixed, (int typecode), (typecode), 0)
+DBUS_WRAP_RET(dbus_bool_t, dbus_type_is_fixed, (int typecode), (typecode), 0)
 
 /* ============================================================
  * Syntax 校验
  * ============================================================ */
-WRAP_RET(dbus_bool_t, dbus_validate_path,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_path,
          (const char *path, DBusError *error), (path, error), 0)
-WRAP_RET(dbus_bool_t, dbus_validate_interface,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_interface,
          (const char *name, DBusError *error), (name, error), 0)
-WRAP_RET(dbus_bool_t, dbus_validate_member,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_member,
          (const char *name, DBusError *error), (name, error), 0)
-WRAP_RET(dbus_bool_t, dbus_validate_error_name,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_error_name,
          (const char *name, DBusError *error), (name, error), 0)
-WRAP_RET(dbus_bool_t, dbus_validate_bus_name,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_bus_name,
          (const char *name, DBusError *error), (name, error), 0)
-WRAP_RET(dbus_bool_t, dbus_validate_utf8,
+DBUS_WRAP_RET(dbus_bool_t, dbus_validate_utf8,
          (const char *alleged_utf8, DBusError *error),
          (alleged_utf8, error), 0)
 
@@ -1401,6 +1401,6 @@ WRAP_RET(dbus_bool_t, dbus_validate_utf8,
  * ============================================================ */
 /* DBusThreadFunctions 是大公开结构体，仅高级用途；
  * 签名用 void*（ABI 兼容指针直传），常规用 threads_init_default。 */
-WRAP_RET(dbus_bool_t, dbus_threads_init,
+DBUS_WRAP_RET(dbus_bool_t, dbus_threads_init,
          (const void *functions), (functions), 0)
-WRAP_RET(dbus_bool_t, dbus_threads_init_default, (void), (), 0)
+DBUS_WRAP_RET(dbus_bool_t, dbus_threads_init_default, (void), (), 0)

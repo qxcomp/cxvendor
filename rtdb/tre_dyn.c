@@ -61,24 +61,24 @@ typedef struct {
  * ============================================================ */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) {
+ typedef HMODULE tre_lib_handle_t;
+ static tre_lib_handle_t tre_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *tre_get_sym(tre_lib_handle_t h, const char *name) {
      return (void *)GetProcAddress(h, name);
  }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ static void tre_free_lib(tre_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *tre_lib_error(void) { return "LoadLibrary failed"; }
+ #define TRE_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) {
+ typedef void *tre_lib_handle_t;
+ static tre_lib_handle_t tre_load_lib(const char *path) {
      return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ static void *tre_get_sym(tre_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void tre_free_lib(tre_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *tre_lib_error(void) { return dlerror(); }
+ #define TRE_PATH_SEP ':'
 #endif
 /* ---------- 数据符号副本 ---------- */
 
@@ -93,11 +93,11 @@ void tre_dyn_sync_globals(void) {
 /* ============================================================
  * 全局状态与库加载
  * ============================================================ */
-static lib_handle_t tre_handle = NULL;
+static tre_lib_handle_t tre_handle = NULL;
 static int tre_init_state = 0;
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define TRE_MAX_CANDIDATES 64
+#define TRE_PATH_BUF_LEN   1024
 
 static const char *tre_defaults[] = {
 "libtre.so.5", "libtre.so", "libtre.dylib", "tre.dll"
@@ -105,17 +105,17 @@ static const char *tre_defaults[] = {
 
 static int tre_do_load(const char *library_path) {
     if (tre_handle) return 0;
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[TRE_MAX_CANDIDATES][TRE_PATH_BUF_LEN];
+    const char *candidates[TRE_MAX_CANDIDATES];
     int n = 0, i;
 
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < TRE_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], TRE_PATH_BUF_LEN, "%s", library_path);
         candidates[n] = bufs[n]; n++;
     }
     const char *explicit_lib = getenv("TRE_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < TRE_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], TRE_PATH_BUF_LEN, "%s", explicit_lib);
         candidates[n] = bufs[n]; n++;
     }
     const char *env_path = getenv(
@@ -131,13 +131,13 @@ static int tre_do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < TRE_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, TRE_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
                     for (i = 0; i < (int)(sizeof(tre_defaults)/sizeof(tre_defaults[0])); i++) {
-                        if (n >= MAX_CANDIDATES - 2) break;
-                        snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, tre_defaults[i]);
+                        if (n >= TRE_MAX_CANDIDATES - 2) break;
+                        snprintf(bufs[n], TRE_PATH_BUF_LEN, "%s/%s", p, tre_defaults[i]);
                         candidates[n] = bufs[n]; n++;
                     }
                 }
@@ -146,30 +146,30 @@ static int tre_do_load(const char *library_path) {
             free(copy);
         }
     }
-    for (i = 0; i < (int)(sizeof(tre_defaults)/sizeof(tre_defaults[0])) && n < MAX_CANDIDATES - 1; i++)
+    for (i = 0; i < (int)(sizeof(tre_defaults)/sizeof(tre_defaults[0])) && n < TRE_MAX_CANDIDATES - 1; i++)
         candidates[n++] = tre_defaults[i];
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s", home, tre_defaults[0]);
+    if (home && *home && n < TRE_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], TRE_PATH_BUF_LEN, "%s/.nix-profile/lib/%s", home, tre_defaults[0]);
         candidates[n] = bufs[n]; n++;
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s", tre_defaults[0]);
+    if (n < TRE_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], TRE_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s", tre_defaults[0]);
         candidates[n] = bufs[n]; n++;
     }
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        tre_handle = load_lib(candidates[i]);
+        tre_handle = tre_load_lib(candidates[i]);
         if (tre_handle) break;
     }
     if (!tre_handle) {
-        fprintf(stderr, "tre_dyn: cannot load library (%s)\n", lib_error());
+        fprintf(stderr, "tre_dyn: cannot load library (%s)\n", tre_lib_error());
         return -1;
     }
-    if (!get_sym(tre_handle, "tre_ast_new_catenation")) {
+    if (!tre_get_sym(tre_handle, "tre_ast_new_catenation")) {
         fprintf(stderr, "tre_dyn: loaded library does not export %s\n", "tre_ast_new_catenation");
-        free_lib(tre_handle); tre_handle = NULL;
+        tre_free_lib(tre_handle); tre_handle = NULL;
         return -1;
     }
     fprintf(stderr, "tre_dyn: loaded %d %s\n", i, candidates[i]);
@@ -177,7 +177,7 @@ static int tre_do_load(const char *library_path) {
     return 0;
 }
 
-void *tre_sym(const char *name) { return tre_handle ? get_sym(tre_handle, name) : NULL; }
+void *tre_sym(const char *name) { return tre_handle ? tre_get_sym(tre_handle, name) : NULL; }
 
 int tre_libok(void) {
     if (tre_init_state == 0)
@@ -205,7 +205,7 @@ int tre_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏：首次调用 dlsym 并缓存；失败打印 stderr 并返回安全值
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define TRE_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
@@ -219,7 +219,7 @@ ret name params {                                                         \
     return fn args;                                                       \
 }
 
-#define WRAP_VOID(name, params, args)                                     \
+#define TRE_WRAP_VOID(name, params, args)                                     \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
@@ -233,31 +233,31 @@ void name params {                                                        \
     fn args;                                                              \
 }
 /* ---------- 全量函数封装 ---------- */
-WRAP_RET(int, tre_config, (int a0, void * a1), (a0, a1), 0)
-WRAP_RET(int, tre_have_approx, (const regex_t * a0), (a0), 0)
-WRAP_RET(int, tre_have_backrefs, (const regex_t * a0), (a0), 0)
-WRAP_RET(int, tre_regaexec, (const regex_t * a0, const char * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_regaexecb, (const regex_t * a0, const char * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_reganexec, (const regex_t * a0, const char * a1, size_t a2, regamatch_t * a3, regaparams_t a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
-WRAP_VOID(tre_regaparams_default, (regaparams_t * a0), (a0))
-WRAP_RET(int, tre_regawexec, (const regex_t * a0, const wchar_t * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_regawnexec, (const regex_t * a0, const wchar_t * a1, size_t a2, regamatch_t * a3, regaparams_t a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
-WRAP_RET(int, tre_regcomp, (regex_t * a0, const char * a1, int a2), (a0, a1, a2), 0)
-WRAP_RET(int, tre_regcompb, (regex_t * a0, const char * a1, int a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, tre_regerror, (int a0, const regex_t * a1, char * a2, size_t a3), (a0, a1, a2, a3), 0)
-WRAP_RET(int, tre_regexec, (const regex_t * a0, const char * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_regexecb, (const regex_t * a0, const char * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_VOID(tre_regfree, (regex_t * a0), (a0))
-WRAP_RET(int, tre_regncomp, (regex_t * a0, const char * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RET(int, tre_regncompb, (regex_t * a0, const char * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RET(int, tre_regnexec, (const regex_t * a0, const char * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
-WRAP_RET(int, tre_regnexecb, (const regex_t * a0, const char * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
-WRAP_RET(int, tre_reguexec, (const regex_t * a0, const tre_str_source * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_regwcomp, (regex_t * a0, const wchar_t * a1, int a2), (a0, a1, a2), 0)
-WRAP_RET(int, tre_regwexec, (const regex_t * a0, const wchar_t * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
-WRAP_RET(int, tre_regwncomp, (regex_t * a0, const wchar_t * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RET(int, tre_regwnexec, (const regex_t * a0, const wchar_t * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
-WRAP_RET(char *, tre_version, (), (), NULL)
+TRE_WRAP_RET(int, tre_config, (int a0, void * a1), (a0, a1), 0)
+TRE_WRAP_RET(int, tre_have_approx, (const regex_t * a0), (a0), 0)
+TRE_WRAP_RET(int, tre_have_backrefs, (const regex_t * a0), (a0), 0)
+TRE_WRAP_RET(int, tre_regaexec, (const regex_t * a0, const char * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_regaexecb, (const regex_t * a0, const char * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_reganexec, (const regex_t * a0, const char * a1, size_t a2, regamatch_t * a3, regaparams_t a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
+TRE_WRAP_VOID(tre_regaparams_default, (regaparams_t * a0), (a0))
+TRE_WRAP_RET(int, tre_regawexec, (const regex_t * a0, const wchar_t * a1, regamatch_t * a2, regaparams_t a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_regawnexec, (const regex_t * a0, const wchar_t * a1, size_t a2, regamatch_t * a3, regaparams_t a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
+TRE_WRAP_RET(int, tre_regcomp, (regex_t * a0, const char * a1, int a2), (a0, a1, a2), 0)
+TRE_WRAP_RET(int, tre_regcompb, (regex_t * a0, const char * a1, int a2), (a0, a1, a2), 0)
+TRE_WRAP_RET(size_t, tre_regerror, (int a0, const regex_t * a1, char * a2, size_t a3), (a0, a1, a2, a3), 0)
+TRE_WRAP_RET(int, tre_regexec, (const regex_t * a0, const char * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_regexecb, (const regex_t * a0, const char * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_VOID(tre_regfree, (regex_t * a0), (a0))
+TRE_WRAP_RET(int, tre_regncomp, (regex_t * a0, const char * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
+TRE_WRAP_RET(int, tre_regncompb, (regex_t * a0, const char * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
+TRE_WRAP_RET(int, tre_regnexec, (const regex_t * a0, const char * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
+TRE_WRAP_RET(int, tre_regnexecb, (const regex_t * a0, const char * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
+TRE_WRAP_RET(int, tre_reguexec, (const regex_t * a0, const tre_str_source * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_regwcomp, (regex_t * a0, const wchar_t * a1, int a2), (a0, a1, a2), 0)
+TRE_WRAP_RET(int, tre_regwexec, (const regex_t * a0, const wchar_t * a1, size_t a2, regmatch_t * a3, int a4), (a0, a1, a2, a3, a4), 0)
+TRE_WRAP_RET(int, tre_regwncomp, (regex_t * a0, const wchar_t * a1, size_t a2, int a3), (a0, a1, a2, a3), 0)
+TRE_WRAP_RET(int, tre_regwnexec, (const regex_t * a0, const wchar_t * a1, size_t a2, size_t a3, regmatch_t * a4, int a5), (a0, a1, a2, a3, a4, a5), 0)
+TRE_WRAP_RET(char *, tre_version, (), (), NULL)
 /* ---------- 未封装（头文件未声明或不可 dlsym，共 22 个） ---------- */
 /* tre_ast_new_catenation (头未声明) */
 /* tre_ast_new_iter (头未声明) */

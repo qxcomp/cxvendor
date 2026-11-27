@@ -64,59 +64,59 @@ typedef struct CXStringImpl CXStringImpl;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE clang_lib_handle_t;
+  static clang_lib_handle_t clang_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *clang_get_sym(clang_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void clang_free_lib(clang_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *clang_lib_error(void) { return "LoadLibrary failed"; }
+  #define CLANG_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *clang_lib_handle_t;
+  static clang_lib_handle_t clang_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *clang_get_sym(clang_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void clang_free_lib(clang_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *clang_lib_error(void) { return dlerror(); }
+  #define CLANG_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t clang_handle = NULL;
-static int init_state = 0;
+static clang_lib_handle_t clang_handle = NULL;
+static int clang_init_state = 0;
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define CLANG_MAX_CANDIDATES 64
+#define CLANG_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int clang_do_load(const char *library_path) {
     if (clang_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[CLANG_MAX_CANDIDATES][CLANG_PATH_BUF_LEN];
+    const char *candidates[CLANG_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < CLANG_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("CLANG_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < CLANG_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -134,16 +134,16 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 3) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < CLANG_MAX_CANDIDATES - 3) {
+                char *sep = strchr(p, CLANG_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s/libclang.dll", p); { candidates[n] = bufs[n]; n++; }
 #elif defined(__APPLE__)
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s/libclang.dylib", p); { candidates[n] = bufs[n]; n++; }
 #else
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libclang.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s/libclang.so", p); { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -164,14 +164,14 @@ static int do_load(const char *library_path) {
     /* 5. Nix 路径 */
 #ifndef _WIN32
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 2) {
+    if (home && *home && n < CLANG_MAX_CANDIDATES - 2) {
 #ifdef __APPLE__
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.dylib", home); { candidates[n] = bufs[n]; n++; }
+        snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.dylib", home); { candidates[n] = bufs[n]; n++; }
 #else
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.so", home); { candidates[n] = bufs[n]; n++; }
+        snprintf(bufs[n], CLANG_PATH_BUF_LEN, "%s/.nix-profile/lib/libclang.so", home); { candidates[n] = bufs[n]; n++; }
 #endif
     }
-    if (n < MAX_CANDIDATES - 2) {
+    if (n < CLANG_MAX_CANDIDATES - 2) {
 #ifdef __APPLE__
         candidates[n++] = "/nix/var/nix/profiles/default/lib/libclang.dylib";
 #else
@@ -201,18 +201,18 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        clang_handle = load_lib(candidates[i]);
+        clang_handle = clang_load_lib(candidates[i]);
         if (clang_handle) break;
     }
     if (!clang_handle) {
-        fprintf(stderr, "clang_dyn: cannot load libclang (%s)\n", lib_error());
+        fprintf(stderr, "clang_dyn: cannot load libclang (%s)\n", clang_lib_error());
         return -1;
     }
 
     /* 验证基础符号 */
-    if (!get_sym(clang_handle, "clang_createIndex")) {
+    if (!clang_get_sym(clang_handle, "clang_createIndex")) {
         fprintf(stderr, "clang_dyn: loaded library does not export clang_createIndex\n");
-        free_lib(clang_handle);
+        clang_free_lib(clang_handle);
         clang_handle = NULL;
         return -1;
     }
@@ -224,38 +224,38 @@ static int do_load(const char *library_path) {
  * 一次性初始化
  * ============================================================ */
 int clang_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (clang_init_state == 0) {
+        clang_init_state = (clang_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && clang_handle != NULL) ? 1 : 0;
+    return (clang_init_state == 1 && clang_handle != NULL) ? 1 : 0;
 }
 
 int clang_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (clang_init_state == 1) return 0;
+    if (clang_init_state == -1) return -1;
+    if (clang_do_load(library_path) == 0) {
+        clang_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    clang_init_state = -1;
     return -1;
 }
 
 void clang_dyn_cleanup(void) {
     if (clang_handle) {
-        free_lib(clang_handle);
+        clang_free_lib(clang_handle);
         clang_handle = NULL;
     }
-    init_state = 0;
+    clang_init_state = 0;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define CLANG_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!clang_libok()) return fallback;                   \
-        *(void **)(&(var)) = get_sym(clang_handle, name);      \
+        *(void **)(&(var)) = clang_get_sym(clang_handle, name);      \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -270,7 +270,7 @@ CXIndex clang_createIndex(int excludeDeclarationsFromPCH, int displayDiagnostics
     static CXIndex (*fn)(int, int) = NULL;
     if (!fn) {
         if (!clang_libok()) return NULL;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_createIndex");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_createIndex");
         if (!fn) return NULL;
     }
     return fn(excludeDeclarationsFromPCH, displayDiagnostics);
@@ -280,7 +280,7 @@ void clang_disposeIndex(CXIndex index) {
     static void (*fn)(CXIndex) = NULL;
     if (!fn) {
         if (!clang_libok()) return;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_disposeIndex");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_disposeIndex");
         if (!fn) return;
     }
     fn(index);
@@ -295,7 +295,7 @@ CXTranslationUnit clang_parseTranslationUnit(
                                    int, struct CXUnsavedFile*, unsigned, unsigned) = NULL;
     if (!fn) {
         if (!clang_libok()) return NULL;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_parseTranslationUnit");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_parseTranslationUnit");
         if (!fn) return NULL;
     }
     return fn(CIdx, source_filename, command_line_args, num_command_line_args,
@@ -306,7 +306,7 @@ void clang_disposeTranslationUnit(CXTranslationUnit tu) {
     static void (*fn)(CXTranslationUnit) = NULL;
     if (!fn) {
         if (!clang_libok()) return;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_disposeTranslationUnit");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_disposeTranslationUnit");
         if (!fn) return;
     }
     fn(tu);
@@ -316,7 +316,7 @@ CXString clang_getTranslationUnitSpelling(CXTranslationUnit CTUnit) {
     static CXString (*fn)(CXTranslationUnit) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getTranslationUnitSpelling");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getTranslationUnitSpelling");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(CTUnit);
@@ -326,7 +326,7 @@ CXCursor clang_getTranslationUnitCursor(CXTranslationUnit tu) {
     static CXCursor (*fn)(CXTranslationUnit) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXCursor c = {0}; return c; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getTranslationUnitCursor");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getTranslationUnitCursor");
         if (!fn) { CXCursor c = {0}; return c; }
     }
     return fn(tu);
@@ -337,7 +337,7 @@ CXCursor clang_getTranslationUnitCursor(CXTranslationUnit tu) {
  * ============================================================ */
 unsigned clang_visitChildren(CXCursor parent, CXCursorVisitor visitor, CXClientData client_data) {
     static unsigned (*fn)(CXCursor, CXCursorVisitor, CXClientData) = NULL;
-    RESOLVE(fn, "clang_visitChildren", 0);
+    CLANG_RESOLVE(fn, "clang_visitChildren", 0);
     return fn(parent, visitor, client_data);
 }
 
@@ -345,7 +345,7 @@ CXString clang_getCursorSpelling(CXCursor cursor) {
     static CXString (*fn)(CXCursor) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getCursorSpelling");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getCursorSpelling");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(cursor);
@@ -353,13 +353,13 @@ CXString clang_getCursorSpelling(CXCursor cursor) {
 
 enum CXCursorKind clang_getCursorKind(CXCursor cursor) {
     static enum CXCursorKind (*fn)(CXCursor) = NULL;
-    RESOLVE(fn, "clang_getCursorKind", CXCursor_InvalidFile);
+    CLANG_RESOLVE(fn, "clang_getCursorKind", CXCursor_InvalidFile);
     return fn(cursor);
 }
 
 unsigned clang_isDeclaration(enum CXCursorKind kind) {
     static unsigned (*fn)(enum CXCursorKind) = NULL;
-    RESOLVE(fn, "clang_isDeclaration", 0);
+    CLANG_RESOLVE(fn, "clang_isDeclaration", 0);
     return fn(kind);
 }
 
@@ -368,7 +368,7 @@ unsigned clang_isDeclaration(enum CXCursorKind kind) {
  * ============================================================ */
 unsigned clang_getNumDiagnostics(CXTranslationUnit Unit) {
     static unsigned (*fn)(CXTranslationUnit) = NULL;
-    RESOLVE(fn, "clang_getNumDiagnostics", 0);
+    CLANG_RESOLVE(fn, "clang_getNumDiagnostics", 0);
     return fn(Unit);
 }
 
@@ -376,7 +376,7 @@ CXDiagnostic clang_getDiagnostic(CXTranslationUnit Unit, unsigned Index) {
     static CXDiagnostic (*fn)(CXTranslationUnit, unsigned) = NULL;
     if (!fn) {
         if (!clang_libok()) return NULL;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getDiagnostic");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getDiagnostic");
         if (!fn) return NULL;
     }
     return fn(Unit, Index);
@@ -386,7 +386,7 @@ void clang_disposeDiagnostic(CXDiagnostic Diagnostic) {
     static void (*fn)(CXDiagnostic) = NULL;
     if (!fn) {
         if (!clang_libok()) return;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_disposeDiagnostic");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_disposeDiagnostic");
         if (!fn) return;
     }
     fn(Diagnostic);
@@ -396,7 +396,7 @@ CXString clang_formatDiagnostic(CXDiagnostic Diagnostic, unsigned Options) {
     static CXString (*fn)(CXDiagnostic, unsigned) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_formatDiagnostic");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_formatDiagnostic");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(Diagnostic, Options);
@@ -404,13 +404,13 @@ CXString clang_formatDiagnostic(CXDiagnostic Diagnostic, unsigned Options) {
 
 unsigned clang_defaultDiagnosticDisplayOptions(void) {
     static unsigned (*fn)(void) = NULL;
-    RESOLVE(fn, "clang_defaultDiagnosticDisplayOptions", 0);
+    CLANG_RESOLVE(fn, "clang_defaultDiagnosticDisplayOptions", 0);
     return fn();
 }
 
 enum CXDiagnosticSeverity clang_getDiagnosticSeverity(CXDiagnostic Diagnostic) {
     static enum CXDiagnosticSeverity (*fn)(CXDiagnostic) = NULL;
-    RESOLVE(fn, "clang_getDiagnosticSeverity", CXDiagnostic_Ignored);
+    CLANG_RESOLVE(fn, "clang_getDiagnosticSeverity", CXDiagnostic_Ignored);
     return fn(Diagnostic);
 }
 
@@ -418,7 +418,7 @@ CXSourceLocation clang_getDiagnosticLocation(CXDiagnostic Diagnostic) {
     static CXSourceLocation (*fn)(CXDiagnostic) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXSourceLocation l = {0}; return l; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getDiagnosticLocation");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getDiagnosticLocation");
         if (!fn) { CXSourceLocation l = {0}; return l; }
     }
     return fn(Diagnostic);
@@ -428,7 +428,7 @@ CXString clang_getDiagnosticSpelling(CXDiagnostic Diagnostic) {
     static CXString (*fn)(CXDiagnostic) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getDiagnosticSpelling");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getDiagnosticSpelling");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(Diagnostic);
@@ -441,7 +441,7 @@ CXSourceLocation clang_getCursorLocation(CXCursor cursor) {
     static CXSourceLocation (*fn)(CXCursor) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXSourceLocation l = {0}; return l; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getCursorLocation");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getCursorLocation");
         if (!fn) { CXSourceLocation l = {0}; return l; }
     }
     return fn(cursor);
@@ -452,7 +452,7 @@ void clang_getExpansionLocation(CXSourceLocation location, CXFile *file,
     static void (*fn)(CXSourceLocation, CXFile*, unsigned*, unsigned*, unsigned*) = NULL;
     if (!fn) {
         if (!clang_libok()) return;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getExpansionLocation");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getExpansionLocation");
         if (!fn) return;
     }
     fn(location, file, line, column, offset);
@@ -462,7 +462,7 @@ CXSourceRange clang_getCursorExtent(CXCursor cursor) {
     static CXSourceRange (*fn)(CXCursor) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXSourceRange r = {0}; return r; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getCursorExtent");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getCursorExtent");
         if (!fn) { CXSourceRange r = {0}; return r; }
     }
     return fn(cursor);
@@ -472,7 +472,7 @@ CXSourceLocation clang_getRangeStart(CXSourceRange range) {
     static CXSourceLocation (*fn)(CXSourceRange) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXSourceLocation l = {0}; return l; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getRangeStart");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getRangeStart");
         if (!fn) { CXSourceLocation l = {0}; return l; }
     }
     return fn(range);
@@ -482,7 +482,7 @@ CXSourceLocation clang_getRangeEnd(CXSourceRange range) {
     static CXSourceLocation (*fn)(CXSourceRange) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXSourceLocation l = {0}; return l; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getRangeEnd");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getRangeEnd");
         if (!fn) { CXSourceLocation l = {0}; return l; }
     }
     return fn(range);
@@ -492,7 +492,7 @@ CXString clang_getFileName(CXFile SFile) {
     static CXString (*fn)(CXFile) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getFileName");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getFileName");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(SFile);
@@ -505,7 +505,7 @@ CXType clang_getCursorType(CXCursor C) {
     static CXType (*fn)(CXCursor) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXType t = {0}; return t; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getCursorType");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getCursorType");
         if (!fn) { CXType t = {0}; return t; }
     }
     return fn(C);
@@ -515,7 +515,7 @@ CXString clang_getTypeSpelling(CXType CT) {
     static CXString (*fn)(CXType) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getTypeSpelling");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getTypeSpelling");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(CT);
@@ -525,7 +525,7 @@ CXString clang_getTypeKindSpelling(enum CXTypeKind K) {
     static CXString (*fn)(enum CXTypeKind) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getTypeKindSpelling");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getTypeKindSpelling");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn(K);
@@ -535,7 +535,7 @@ CXType clang_getPointeeType(CXType T) {
     static CXType (*fn)(CXType) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXType t = {0}; return t; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getPointeeType");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getPointeeType");
         if (!fn) { CXType t = {0}; return t; }
     }
     return fn(T);
@@ -543,7 +543,7 @@ CXType clang_getPointeeType(CXType T) {
 
 unsigned clang_isConstQualifiedType(CXType T) {
     static unsigned (*fn)(CXType) = NULL;
-    RESOLVE(fn, "clang_isConstQualifiedType", 0);
+    CLANG_RESOLVE(fn, "clang_isConstQualifiedType", 0);
     return fn(T);
 }
 
@@ -554,7 +554,7 @@ const char *clang_getCString(CXString string) {
     static const char *(*fn)(CXString) = NULL;
     if (!fn) {
         if (!clang_libok()) return NULL;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getCString");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getCString");
         if (!fn) return NULL;
     }
     return fn(string);
@@ -564,7 +564,7 @@ void clang_disposeString(CXString string) {
     static void (*fn)(CXString) = NULL;
     if (!fn) {
         if (!clang_libok()) return;
-        *(void **)(&fn) = get_sym(clang_handle, "clang_disposeString");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_disposeString");
         if (!fn) return;
     }
     fn(string);
@@ -574,7 +574,7 @@ CXString clang_getClangVersion(void) {
     static CXString (*fn)(void) = NULL;
     if (!fn) {
         if (!clang_libok()) { CXString s = {0}; return s; }
-        *(void **)(&fn) = get_sym(clang_handle, "clang_getClangVersion");
+        *(void **)(&fn) = clang_get_sym(clang_handle, "clang_getClangVersion");
         if (!fn) { CXString s = {0}; return s; }
     }
     return fn();

@@ -23,20 +23,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE fastipc_lib_handle_t;
+  static fastipc_lib_handle_t fastipc_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *fastipc_get_sym(fastipc_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void fastipc_free_lib(fastipc_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *fastipc_lib_error(void) { return "LoadLibrary failed"; }
+  #define FASTIPC_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *fastipc_lib_handle_t;
+  static fastipc_lib_handle_t fastipc_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *fastipc_get_sym(fastipc_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void fastipc_free_lib(fastipc_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *fastipc_lib_error(void) { return dlerror(); }
+  #define FASTIPC_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -82,11 +82,11 @@ typedef enum
 #endif /* FASTIPC_DYN_HAVE_HEADER */
 
 /* ---------- 动态层状态 ---------- */
-static lib_handle_t fastipc_handle = NULL;
+static fastipc_lib_handle_t fastipc_handle = NULL;
 static int fastipc_init_state = 0;
 
 static void *fastipc_sym(const char *name) {
-    return fastipc_handle ? get_sym(fastipc_handle, name) : NULL;
+    return fastipc_handle ? fastipc_get_sym(fastipc_handle, name) : NULL;
 }
 
 static int fastipc_do_load(const char *library_path) {
@@ -122,7 +122,7 @@ static int fastipc_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 52) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, FASTIPC_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q && n + 1 < 64) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -162,12 +162,12 @@ static int fastipc_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        fastipc_handle = load_lib(candidates[i]);
+        fastipc_handle = fastipc_load_lib(candidates[i]);
         if (fastipc_handle) { res = i; break; }
     }
     if (!fastipc_handle || !fastipc_sym("fipc_result_str")) {
-        fprintf(stderr, "fastipc_dyn: cannot load fastipc (%s)\n", lib_error());
-        if (fastipc_handle) { free_lib(fastipc_handle); fastipc_handle = NULL; }
+        fprintf(stderr, "fastipc_dyn: cannot load fastipc (%s)\n", fastipc_lib_error());
+        if (fastipc_handle) { fastipc_free_lib(fastipc_handle); fastipc_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "fastipc_dyn: loaded %d %s\n", res, candidates[res]);
@@ -190,7 +190,7 @@ int fastipc_dyn_init(const char *library_path) {
 }
 
 void fastipc_dyn_cleanup(void) {
-    if (fastipc_handle) { free_lib(fastipc_handle); fastipc_handle = NULL; }
+    if (fastipc_handle) { fastipc_free_lib(fastipc_handle); fastipc_handle = NULL; }
     fastipc_init_state = 0;
 }
 
@@ -202,7 +202,7 @@ int fastipc_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define FASTIPC_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -215,7 +215,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define FASTIPC_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -230,33 +230,33 @@ void name params {                                                             \
 }
 
 /* ---------- 30 个 FIPC_API 公开函数（函数名原样） ---------- */
-WRAP_RET(const char *, fipc_result_str, (fipc_result_t result), (result), NULL)
-WRAP_RET(fipc_result_t, fipc_stream_create, (const char *name, size_t capacity, fipc_listener_t **out_listener), (name, capacity, out_listener), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_stream_accept, (fipc_listener_t *listener, fipc_conn_t **out_conn, int timeout_ms), (listener, out_conn, timeout_ms), FIPC_INVALID)
-WRAP_VOID(fipc_listener_cancel, (fipc_listener_t *listener), (listener))
-WRAP_VOID(fipc_listener_close, (fipc_listener_t *listener), (listener))
-WRAP_RET(fipc_result_t, fipc_stream_connect, (const char *name, fipc_conn_t **out_conn, int timeout_ms), (name, out_conn, timeout_ms), FIPC_INVALID)
-WRAP_RET(size_t, fipc_max_piece, (const fipc_conn_t *conn), (conn), 0)
-WRAP_VOID(fipc_cancel, (fipc_conn_t *conn), (conn))
-WRAP_VOID(fipc_close, (fipc_conn_t *conn), (conn))
-WRAP_RET(fipc_result_t, fipc_send, (fipc_conn_t *conn, const void *data, size_t len, int timeout_ms), (conn, data, len, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_recv, (fipc_conn_t *conn, void *buf, size_t buf_len, size_t *out_len, int timeout_ms), (conn, buf, buf_len, out_len, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_send_many, (fipc_conn_t *conn, const void *const *datas, const size_t *lens, size_t count, size_t *out_sent, int timeout_ms), (conn, datas, lens, count, out_sent, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_recv_many, (fipc_conn_t *conn, void *buf, size_t buf_len, size_t *lens, size_t max_count, size_t *out_count, int timeout_ms), (conn, buf, buf_len, lens, max_count, out_count, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_send_acquire, (fipc_conn_t *conn, size_t len, void **out_buf, int timeout_ms), (conn, len, out_buf, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_send_commit, (fipc_conn_t *conn, size_t len), (conn, len), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_recv_acquire, (fipc_conn_t *conn, const void **out_data, size_t *out_len, int timeout_ms), (conn, out_data, out_len, timeout_ms), FIPC_INVALID)
-WRAP_VOID(fipc_recv_release, (fipc_conn_t *conn), (conn))
-WRAP_RET(fipc_result_t, fipc_broadcast_create, (const char *name, size_t capacity, uint32_t max_subscribers, int max_stall_ms, fipc_conn_t **out_publisher), (name, capacity, max_subscribers, max_stall_ms, out_publisher), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_broadcast_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_broadcast_wait_for_members, (fipc_conn_t *publisher, uint32_t at_least, uint32_t *out_count, int timeout_ms), (publisher, at_least, out_count, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_queue_create, (const char *name, size_t capacity, uint32_t max_producers, uint32_t max_consumers, fipc_queue_t **out_queue), (name, capacity, max_producers, max_consumers, out_queue), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_queue_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_queue_wait_for_members, (fipc_queue_t *queue, int role, uint32_t at_least, uint32_t *out_count, int timeout_ms), (queue, role, at_least, out_count, timeout_ms), FIPC_INVALID)
-WRAP_VOID(fipc_queue_cancel, (fipc_queue_t *queue), (queue))
-WRAP_VOID(fipc_queue_close, (fipc_queue_t *queue), (queue))
-WRAP_RET(fipc_result_t, fipc_service_create, (const char *name, size_t capacity, size_t max_message, uint32_t max_clients, uint32_t max_servers, fipc_service_t **out_service), (name, capacity, max_message, max_clients, max_servers, out_service), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_service_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
-WRAP_RET(fipc_result_t, fipc_service_wait_for_members, (fipc_service_t *service, int role, uint32_t at_least, uint32_t *out_count, int timeout_ms), (service, role, at_least, out_count, timeout_ms), FIPC_INVALID)
-WRAP_VOID(fipc_service_cancel, (fipc_service_t *service), (service))
-WRAP_VOID(fipc_service_close, (fipc_service_t *service), (service))
+FASTIPC_WRAP_RET(const char *, fipc_result_str, (fipc_result_t result), (result), NULL)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_stream_create, (const char *name, size_t capacity, fipc_listener_t **out_listener), (name, capacity, out_listener), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_stream_accept, (fipc_listener_t *listener, fipc_conn_t **out_conn, int timeout_ms), (listener, out_conn, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_VOID(fipc_listener_cancel, (fipc_listener_t *listener), (listener))
+FASTIPC_WRAP_VOID(fipc_listener_close, (fipc_listener_t *listener), (listener))
+FASTIPC_WRAP_RET(fipc_result_t, fipc_stream_connect, (const char *name, fipc_conn_t **out_conn, int timeout_ms), (name, out_conn, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(size_t, fipc_max_piece, (const fipc_conn_t *conn), (conn), 0)
+FASTIPC_WRAP_VOID(fipc_cancel, (fipc_conn_t *conn), (conn))
+FASTIPC_WRAP_VOID(fipc_close, (fipc_conn_t *conn), (conn))
+FASTIPC_WRAP_RET(fipc_result_t, fipc_send, (fipc_conn_t *conn, const void *data, size_t len, int timeout_ms), (conn, data, len, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_recv, (fipc_conn_t *conn, void *buf, size_t buf_len, size_t *out_len, int timeout_ms), (conn, buf, buf_len, out_len, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_send_many, (fipc_conn_t *conn, const void *const *datas, const size_t *lens, size_t count, size_t *out_sent, int timeout_ms), (conn, datas, lens, count, out_sent, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_recv_many, (fipc_conn_t *conn, void *buf, size_t buf_len, size_t *lens, size_t max_count, size_t *out_count, int timeout_ms), (conn, buf, buf_len, lens, max_count, out_count, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_send_acquire, (fipc_conn_t *conn, size_t len, void **out_buf, int timeout_ms), (conn, len, out_buf, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_send_commit, (fipc_conn_t *conn, size_t len), (conn, len), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_recv_acquire, (fipc_conn_t *conn, const void **out_data, size_t *out_len, int timeout_ms), (conn, out_data, out_len, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_VOID(fipc_recv_release, (fipc_conn_t *conn), (conn))
+FASTIPC_WRAP_RET(fipc_result_t, fipc_broadcast_create, (const char *name, size_t capacity, uint32_t max_subscribers, int max_stall_ms, fipc_conn_t **out_publisher), (name, capacity, max_subscribers, max_stall_ms, out_publisher), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_broadcast_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_broadcast_wait_for_members, (fipc_conn_t *publisher, uint32_t at_least, uint32_t *out_count, int timeout_ms), (publisher, at_least, out_count, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_queue_create, (const char *name, size_t capacity, uint32_t max_producers, uint32_t max_consumers, fipc_queue_t **out_queue), (name, capacity, max_producers, max_consumers, out_queue), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_queue_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_queue_wait_for_members, (fipc_queue_t *queue, int role, uint32_t at_least, uint32_t *out_count, int timeout_ms), (queue, role, at_least, out_count, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_VOID(fipc_queue_cancel, (fipc_queue_t *queue), (queue))
+FASTIPC_WRAP_VOID(fipc_queue_close, (fipc_queue_t *queue), (queue))
+FASTIPC_WRAP_RET(fipc_result_t, fipc_service_create, (const char *name, size_t capacity, size_t max_message, uint32_t max_clients, uint32_t max_servers, fipc_service_t **out_service), (name, capacity, max_message, max_clients, max_servers, out_service), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_service_join, (const char *name, int role, fipc_conn_t **out_conn, int timeout_ms), (name, role, out_conn, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_RET(fipc_result_t, fipc_service_wait_for_members, (fipc_service_t *service, int role, uint32_t at_least, uint32_t *out_count, int timeout_ms), (service, role, at_least, out_count, timeout_ms), FIPC_INVALID)
+FASTIPC_WRAP_VOID(fipc_service_cancel, (fipc_service_t *service), (service))
+FASTIPC_WRAP_VOID(fipc_service_close, (fipc_service_t *service), (service))

@@ -32,20 +32,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE msgpack_lib_handle_t;
+  static msgpack_lib_handle_t msgpack_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *msgpack_get_sym(msgpack_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void msgpack_free_lib(msgpack_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *msgpack_lib_error(void) { return "LoadLibrary failed"; }
+  #define MSGPACK_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *msgpack_lib_handle_t;
+  static msgpack_lib_handle_t msgpack_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *msgpack_get_sym(msgpack_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void msgpack_free_lib(msgpack_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *msgpack_lib_error(void) { return dlerror(); }
+  #define MSGPACK_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -222,11 +222,11 @@ typedef struct msgpack_vrefbuffer {
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t msgpack_handle = NULL;
+static msgpack_lib_handle_t msgpack_handle = NULL;
 static int msgpack_init_state = 0;
 
 static void *msgpack_sym(const char *name) {
-    return msgpack_handle ? get_sym(msgpack_handle, name) : NULL;
+    return msgpack_handle ? msgpack_get_sym(msgpack_handle, name) : NULL;
 }
 
 static int msgpack_do_load(const char *library_path) {
@@ -266,7 +266,7 @@ static int msgpack_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 76) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, MSGPACK_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q && n + 5 < 96) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -324,13 +324,13 @@ static int msgpack_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        msgpack_handle = load_lib(candidates[i]);
+        msgpack_handle = msgpack_load_lib(candidates[i]);
         // printf("try %d %s\n", i, candidates[i]);
         if (msgpack_handle) { res = i; break; }
     }
     if (!msgpack_handle || !msgpack_sym("msgpack_version")) {
-        fprintf(stderr, "msgpack_dyn: cannot load msgpack (%s)\n", lib_error());
-        if (msgpack_handle) { free_lib(msgpack_handle); msgpack_handle = NULL; }
+        fprintf(stderr, "msgpack_dyn: cannot load msgpack (%s)\n", msgpack_lib_error());
+        if (msgpack_handle) { msgpack_free_lib(msgpack_handle); msgpack_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "msgpack_dyn: loaded %d %s\n", res, candidates[res]);
@@ -353,7 +353,7 @@ int msgpack_dyn_init(const char *library_path) {
 }
 
 void msgpack_dyn_cleanup(void) {
-    if (msgpack_handle) { free_lib(msgpack_handle); msgpack_handle = NULL; }
+    if (msgpack_handle) { msgpack_free_lib(msgpack_handle); msgpack_handle = NULL; }
     msgpack_init_state = 0;
 }
 
@@ -365,7 +365,7 @@ int msgpack_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define MSGPACK_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -378,7 +378,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define MSGPACK_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -393,51 +393,51 @@ void name params {                                                             \
 }
 
 /* ---------- 48 个公开非 static 函数（函数名原样） ---------- */
-WRAP_VOID(msgpack_object_init_nil, (msgpack_object *d), (d))
-WRAP_VOID(msgpack_object_init_boolean, (msgpack_object *d, bool v), (d, v))
-WRAP_VOID(msgpack_object_init_unsigned_integer, (msgpack_object *d, uint64_t v), (d, v))
-WRAP_VOID(msgpack_object_init_signed_integer, (msgpack_object *d, int64_t v), (d, v))
-WRAP_VOID(msgpack_object_init_float32, (msgpack_object *d, float v), (d, v))
-WRAP_VOID(msgpack_object_init_float64, (msgpack_object *d, double v), (d, v))
-WRAP_VOID(msgpack_object_init_str, (msgpack_object *d, const char *data, uint32_t size), (d, data, size))
-WRAP_VOID(msgpack_object_init_bin, (msgpack_object *d, const char *data, uint32_t size), (d, data, size))
-WRAP_VOID(msgpack_object_init_ext, (msgpack_object *d, int8_t type, const char *data, uint32_t size), (d, type, data, size))
-WRAP_VOID(msgpack_object_init_array, (msgpack_object *d, msgpack_object *data, uint32_t size), (d, data, size))
-WRAP_VOID(msgpack_object_init_map, (msgpack_object *d, msgpack_object_kv *data, uint32_t size), (d, data, size))
-WRAP_VOID(msgpack_object_print, (FILE *out, msgpack_object o), (out, o))
-WRAP_RET(int, msgpack_object_print_buffer, (char *buffer, size_t buffer_size, msgpack_object o), (buffer, buffer_size, o), -1)
-WRAP_RET(bool, msgpack_object_equal, (const msgpack_object x, const msgpack_object y), (x, y), false)
-WRAP_RET(int, msgpack_pack_object, (msgpack_packer *pk, msgpack_object d), (pk, d), -1)
-WRAP_RET(msgpack_unpack_return, msgpack_unpack_next, (msgpack_unpacked *result, const char *data, size_t len, size_t *off), (result, data, len, off), MSGPACK_UNPACK_NOMEM_ERROR)
-WRAP_RET(bool, msgpack_unpacker_init, (msgpack_unpacker *mpac, size_t initial_buffer_size), (mpac, initial_buffer_size), false)
-WRAP_VOID(msgpack_unpacker_destroy, (msgpack_unpacker *mpac), (mpac))
-WRAP_RET(msgpack_unpacker *, msgpack_unpacker_new, (size_t initial_buffer_size), (initial_buffer_size), NULL)
-WRAP_VOID(msgpack_unpacker_free, (msgpack_unpacker *mpac), (mpac))
-WRAP_RET(msgpack_unpack_return, msgpack_unpacker_next, (msgpack_unpacker *mpac, msgpack_unpacked *pac), (mpac, pac), MSGPACK_UNPACK_NOMEM_ERROR)
-WRAP_RET(msgpack_unpack_return, msgpack_unpacker_next_with_size, (msgpack_unpacker *mpac, msgpack_unpacked *result, size_t *p_bytes), (mpac, result, p_bytes), MSGPACK_UNPACK_NOMEM_ERROR)
-WRAP_RET(int, msgpack_unpacker_execute, (msgpack_unpacker *mpac), (mpac), -1)
-WRAP_RET(msgpack_object, msgpack_unpacker_data, (msgpack_unpacker *mpac), (mpac), ((msgpack_object){0}))
-WRAP_RET(msgpack_zone *, msgpack_unpacker_release_zone, (msgpack_unpacker *mpac), (mpac), NULL)
-WRAP_VOID(msgpack_unpacker_reset_zone, (msgpack_unpacker *mpac), (mpac))
-WRAP_VOID(msgpack_unpacker_reset, (msgpack_unpacker *mpac), (mpac))
-WRAP_RET(bool, msgpack_unpacker_flush_zone, (msgpack_unpacker *mpac), (mpac), false)
-WRAP_RET(bool, msgpack_unpacker_expand_buffer, (msgpack_unpacker *mpac, size_t size), (mpac, size), false)
-WRAP_RET(msgpack_unpack_return, msgpack_unpack, (const char *data, size_t len, size_t *off, msgpack_zone *result_zone, msgpack_object *result), (data, len, off, result_zone, result), MSGPACK_UNPACK_NOMEM_ERROR)
-WRAP_RET(const char *, msgpack_version, (void), (), NULL)
-WRAP_RET(int, msgpack_version_major, (void), (), -1)
-WRAP_RET(int, msgpack_version_minor, (void), (), -1)
-WRAP_RET(int, msgpack_version_revision, (void), (), -1)
-WRAP_RET(bool, msgpack_vrefbuffer_init, (msgpack_vrefbuffer *vbuf, size_t ref_size, size_t chunk_size), (vbuf, ref_size, chunk_size), false)
-WRAP_VOID(msgpack_vrefbuffer_destroy, (msgpack_vrefbuffer *vbuf), (vbuf))
-WRAP_RET(int, msgpack_vrefbuffer_append_copy, (msgpack_vrefbuffer *vbuf, const char *buf, size_t len), (vbuf, buf, len), -1)
-WRAP_RET(int, msgpack_vrefbuffer_append_ref, (msgpack_vrefbuffer *vbuf, const char *buf, size_t len), (vbuf, buf, len), -1)
-WRAP_RET(int, msgpack_vrefbuffer_migrate, (msgpack_vrefbuffer *vbuf, msgpack_vrefbuffer *to), (vbuf, to), -1)
-WRAP_VOID(msgpack_vrefbuffer_clear, (msgpack_vrefbuffer *vref), (vref))
-WRAP_RET(bool, msgpack_zone_init, (msgpack_zone *zone, size_t chunk_size), (zone, chunk_size), false)
-WRAP_VOID(msgpack_zone_destroy, (msgpack_zone *zone), (zone))
-WRAP_RET(msgpack_zone *, msgpack_zone_new, (size_t chunk_size), (chunk_size), NULL)
-WRAP_VOID(msgpack_zone_free, (msgpack_zone *zone), (zone))
-WRAP_RET(bool, msgpack_zone_is_empty, (msgpack_zone *zone), (zone), true)
-WRAP_VOID(msgpack_zone_clear, (msgpack_zone *zone), (zone))
-WRAP_RET(void *, msgpack_zone_malloc_expand, (msgpack_zone *zone, size_t size), (zone, size), NULL)
-WRAP_RET(bool, msgpack_zone_push_finalizer_expand, (msgpack_zone *zone, void (*func)(void *data), void *data), (zone, func, data), false)
+MSGPACK_WRAP_VOID(msgpack_object_init_nil, (msgpack_object *d), (d))
+MSGPACK_WRAP_VOID(msgpack_object_init_boolean, (msgpack_object *d, bool v), (d, v))
+MSGPACK_WRAP_VOID(msgpack_object_init_unsigned_integer, (msgpack_object *d, uint64_t v), (d, v))
+MSGPACK_WRAP_VOID(msgpack_object_init_signed_integer, (msgpack_object *d, int64_t v), (d, v))
+MSGPACK_WRAP_VOID(msgpack_object_init_float32, (msgpack_object *d, float v), (d, v))
+MSGPACK_WRAP_VOID(msgpack_object_init_float64, (msgpack_object *d, double v), (d, v))
+MSGPACK_WRAP_VOID(msgpack_object_init_str, (msgpack_object *d, const char *data, uint32_t size), (d, data, size))
+MSGPACK_WRAP_VOID(msgpack_object_init_bin, (msgpack_object *d, const char *data, uint32_t size), (d, data, size))
+MSGPACK_WRAP_VOID(msgpack_object_init_ext, (msgpack_object *d, int8_t type, const char *data, uint32_t size), (d, type, data, size))
+MSGPACK_WRAP_VOID(msgpack_object_init_array, (msgpack_object *d, msgpack_object *data, uint32_t size), (d, data, size))
+MSGPACK_WRAP_VOID(msgpack_object_init_map, (msgpack_object *d, msgpack_object_kv *data, uint32_t size), (d, data, size))
+MSGPACK_WRAP_VOID(msgpack_object_print, (FILE *out, msgpack_object o), (out, o))
+MSGPACK_WRAP_RET(int, msgpack_object_print_buffer, (char *buffer, size_t buffer_size, msgpack_object o), (buffer, buffer_size, o), -1)
+MSGPACK_WRAP_RET(bool, msgpack_object_equal, (const msgpack_object x, const msgpack_object y), (x, y), false)
+MSGPACK_WRAP_RET(int, msgpack_pack_object, (msgpack_packer *pk, msgpack_object d), (pk, d), -1)
+MSGPACK_WRAP_RET(msgpack_unpack_return, msgpack_unpack_next, (msgpack_unpacked *result, const char *data, size_t len, size_t *off), (result, data, len, off), MSGPACK_UNPACK_NOMEM_ERROR)
+MSGPACK_WRAP_RET(bool, msgpack_unpacker_init, (msgpack_unpacker *mpac, size_t initial_buffer_size), (mpac, initial_buffer_size), false)
+MSGPACK_WRAP_VOID(msgpack_unpacker_destroy, (msgpack_unpacker *mpac), (mpac))
+MSGPACK_WRAP_RET(msgpack_unpacker *, msgpack_unpacker_new, (size_t initial_buffer_size), (initial_buffer_size), NULL)
+MSGPACK_WRAP_VOID(msgpack_unpacker_free, (msgpack_unpacker *mpac), (mpac))
+MSGPACK_WRAP_RET(msgpack_unpack_return, msgpack_unpacker_next, (msgpack_unpacker *mpac, msgpack_unpacked *pac), (mpac, pac), MSGPACK_UNPACK_NOMEM_ERROR)
+MSGPACK_WRAP_RET(msgpack_unpack_return, msgpack_unpacker_next_with_size, (msgpack_unpacker *mpac, msgpack_unpacked *result, size_t *p_bytes), (mpac, result, p_bytes), MSGPACK_UNPACK_NOMEM_ERROR)
+MSGPACK_WRAP_RET(int, msgpack_unpacker_execute, (msgpack_unpacker *mpac), (mpac), -1)
+MSGPACK_WRAP_RET(msgpack_object, msgpack_unpacker_data, (msgpack_unpacker *mpac), (mpac), ((msgpack_object){0}))
+MSGPACK_WRAP_RET(msgpack_zone *, msgpack_unpacker_release_zone, (msgpack_unpacker *mpac), (mpac), NULL)
+MSGPACK_WRAP_VOID(msgpack_unpacker_reset_zone, (msgpack_unpacker *mpac), (mpac))
+MSGPACK_WRAP_VOID(msgpack_unpacker_reset, (msgpack_unpacker *mpac), (mpac))
+MSGPACK_WRAP_RET(bool, msgpack_unpacker_flush_zone, (msgpack_unpacker *mpac), (mpac), false)
+MSGPACK_WRAP_RET(bool, msgpack_unpacker_expand_buffer, (msgpack_unpacker *mpac, size_t size), (mpac, size), false)
+MSGPACK_WRAP_RET(msgpack_unpack_return, msgpack_unpack, (const char *data, size_t len, size_t *off, msgpack_zone *result_zone, msgpack_object *result), (data, len, off, result_zone, result), MSGPACK_UNPACK_NOMEM_ERROR)
+MSGPACK_WRAP_RET(const char *, msgpack_version, (void), (), NULL)
+MSGPACK_WRAP_RET(int, msgpack_version_major, (void), (), -1)
+MSGPACK_WRAP_RET(int, msgpack_version_minor, (void), (), -1)
+MSGPACK_WRAP_RET(int, msgpack_version_revision, (void), (), -1)
+MSGPACK_WRAP_RET(bool, msgpack_vrefbuffer_init, (msgpack_vrefbuffer *vbuf, size_t ref_size, size_t chunk_size), (vbuf, ref_size, chunk_size), false)
+MSGPACK_WRAP_VOID(msgpack_vrefbuffer_destroy, (msgpack_vrefbuffer *vbuf), (vbuf))
+MSGPACK_WRAP_RET(int, msgpack_vrefbuffer_append_copy, (msgpack_vrefbuffer *vbuf, const char *buf, size_t len), (vbuf, buf, len), -1)
+MSGPACK_WRAP_RET(int, msgpack_vrefbuffer_append_ref, (msgpack_vrefbuffer *vbuf, const char *buf, size_t len), (vbuf, buf, len), -1)
+MSGPACK_WRAP_RET(int, msgpack_vrefbuffer_migrate, (msgpack_vrefbuffer *vbuf, msgpack_vrefbuffer *to), (vbuf, to), -1)
+MSGPACK_WRAP_VOID(msgpack_vrefbuffer_clear, (msgpack_vrefbuffer *vref), (vref))
+MSGPACK_WRAP_RET(bool, msgpack_zone_init, (msgpack_zone *zone, size_t chunk_size), (zone, chunk_size), false)
+MSGPACK_WRAP_VOID(msgpack_zone_destroy, (msgpack_zone *zone), (zone))
+MSGPACK_WRAP_RET(msgpack_zone *, msgpack_zone_new, (size_t chunk_size), (chunk_size), NULL)
+MSGPACK_WRAP_VOID(msgpack_zone_free, (msgpack_zone *zone), (zone))
+MSGPACK_WRAP_RET(bool, msgpack_zone_is_empty, (msgpack_zone *zone), (zone), true)
+MSGPACK_WRAP_VOID(msgpack_zone_clear, (msgpack_zone *zone), (zone))
+MSGPACK_WRAP_RET(void *, msgpack_zone_malloc_expand, (msgpack_zone *zone, size_t size), (zone, size), NULL)
+MSGPACK_WRAP_RET(bool, msgpack_zone_push_finalizer_expand, (msgpack_zone *zone, void (*func)(void *data), void *data), (zone, func, data), false)

@@ -43,60 +43,60 @@ typedef struct mpv_event mpv_event;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE mpv_lib_handle_t;
+  static mpv_lib_handle_t mpv_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *mpv_get_sym(mpv_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void mpv_free_lib(mpv_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *mpv_lib_error(void) { return "LoadLibrary failed"; }
+  #define MPV_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *mpv_lib_handle_t;
+  static mpv_lib_handle_t mpv_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *mpv_get_sym(mpv_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void mpv_free_lib(mpv_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *mpv_lib_error(void) { return dlerror(); }
+  #define MPV_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t mpv_handle_lib = NULL;
-static int init_state = 0;
+static mpv_lib_handle_t mpv_handle_lib = NULL;
+static int mpv_init_state = 0;
 static unsigned long loaded_api_version = 0;
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define MPV_MAX_CANDIDATES 64
+#define MPV_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int mpv_do_load(const char *library_path) {
     if (mpv_handle_lib) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[MPV_MAX_CANDIDATES][MPV_PATH_BUF_LEN];
+    const char *candidates[MPV_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < MPV_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("MPV_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < MPV_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -114,18 +114,18 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 3) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < MPV_MAX_CANDIDATES - 3) {
+                char *sep = strchr(p, MPV_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/mpv-2.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/mpv-2.dll", p); { candidates[n] = bufs[n]; n++; }
 #elif defined(__APPLE__)
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libmpv.2.dylib", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libmpv.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/libmpv.2.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/libmpv.dylib", p); { candidates[n] = bufs[n]; n++; }
 #else
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libmpv.so.2", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libmpv.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/libmpv.so.2", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/libmpv.so", p); { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -148,14 +148,14 @@ static int do_load(const char *library_path) {
     /* 5. Nix 路径 */
 #ifndef _WIN32
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 2) {
+    if (home && *home && n < MPV_MAX_CANDIDATES - 2) {
 #ifdef __APPLE__
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libmpv.2.dylib", home); { candidates[n] = bufs[n]; n++; }
+        snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/.nix-profile/lib/libmpv.2.dylib", home); { candidates[n] = bufs[n]; n++; }
 #else
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libmpv.so.2", home); { candidates[n] = bufs[n]; n++; }
+        snprintf(bufs[n], MPV_PATH_BUF_LEN, "%s/.nix-profile/lib/libmpv.so.2", home); { candidates[n] = bufs[n]; n++; }
 #endif
     }
-    if (n < MAX_CANDIDATES - 2) {
+    if (n < MPV_MAX_CANDIDATES - 2) {
 #ifdef __APPLE__
         candidates[n++] = "/nix/var/nix/profiles/default/lib/libmpv.2.dylib";
 #else
@@ -181,20 +181,20 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        mpv_handle_lib = load_lib(candidates[i]);
+        mpv_handle_lib = mpv_load_lib(candidates[i]);
         if (mpv_handle_lib) break;
     }
     if (!mpv_handle_lib) {
-        fprintf(stderr, "mpv_dyn: cannot load libmpv (%s)\n", lib_error());
+        fprintf(stderr, "mpv_dyn: cannot load libmpv (%s)\n", mpv_lib_error());
         return -1;
     }
 
     /* 验证基础符号 */
     unsigned long (*fn_api_version)(void) = NULL;
-    *(void **)(&fn_api_version) = get_sym(mpv_handle_lib, "mpv_client_api_version");
+    *(void **)(&fn_api_version) = mpv_get_sym(mpv_handle_lib, "mpv_client_api_version");
     if (!fn_api_version) {
         fprintf(stderr, "mpv_dyn: loaded library does not export mpv_client_api_version\n");
-        free_lib(mpv_handle_lib);
+        mpv_free_lib(mpv_handle_lib);
         mpv_handle_lib = NULL;
         return -1;
     }
@@ -207,29 +207,29 @@ static int do_load(const char *library_path) {
  * 一次性初始化
  * ============================================================ */
 int mpv_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (mpv_init_state == 0) {
+        mpv_init_state = (mpv_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && mpv_handle_lib != NULL) ? 1 : 0;
+    return (mpv_init_state == 1 && mpv_handle_lib != NULL) ? 1 : 0;
 }
 
 int mpv_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (mpv_init_state == 1) return 0;
+    if (mpv_init_state == -1) return -1;
+    if (mpv_do_load(library_path) == 0) {
+        mpv_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    mpv_init_state = -1;
     return -1;
 }
 
 void mpv_dyn_cleanup(void) {
     if (mpv_handle_lib) {
-        free_lib(mpv_handle_lib);
+        mpv_free_lib(mpv_handle_lib);
         mpv_handle_lib = NULL;
     }
-    init_state = 0;
+    mpv_init_state = 0;
     loaded_api_version = 0;
 }
 
@@ -240,10 +240,10 @@ unsigned long mpv_dyn_api_version(void) {
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define MPV_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!mpv_libok()) return fallback;                     \
-        *(void **)(&(var)) = get_sym(mpv_handle_lib, name);    \
+        *(void **)(&(var)) = mpv_get_sym(mpv_handle_lib, name);    \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -258,7 +258,7 @@ mpv_handle *mpv_create(void) {
     static mpv_handle *(*fn)(void) = NULL;
     if (!fn) {
         if (!mpv_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_create");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_create");
         if (!fn) return NULL;
     }
     return fn();
@@ -266,7 +266,7 @@ mpv_handle *mpv_create(void) {
 
 int mpv_initialize(mpv_handle *ctx) {
     static int (*fn)(mpv_handle*) = NULL;
-    RESOLVE(fn, "mpv_initialize", -1);
+    MPV_RESOLVE(fn, "mpv_initialize", -1);
     return fn(ctx);
 }
 
@@ -274,7 +274,7 @@ void mpv_terminate_destroy(mpv_handle *ctx) {
     static void (*fn)(mpv_handle*) = NULL;
     if (!fn) {
         if (!mpv_libok()) return;
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_terminate_destroy");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_terminate_destroy");
         if (!fn) return;
     }
     fn(ctx);
@@ -282,19 +282,19 @@ void mpv_terminate_destroy(mpv_handle *ctx) {
 
 int mpv_command(mpv_handle *ctx, const char **args) {
     static int (*fn)(mpv_handle*, const char**) = NULL;
-    RESOLVE(fn, "mpv_command", -1);
+    MPV_RESOLVE(fn, "mpv_command", -1);
     return fn(ctx, args);
 }
 
 int mpv_set_option_string(mpv_handle *ctx, const char *name, const char *data) {
     static int (*fn)(mpv_handle*, const char*, const char*) = NULL;
-    RESOLVE(fn, "mpv_set_option_string", -1);
+    MPV_RESOLVE(fn, "mpv_set_option_string", -1);
     return fn(ctx, name, data);
 }
 
 int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data) {
     static int (*fn)(mpv_handle*, const char*, const char*) = NULL;
-    RESOLVE(fn, "mpv_set_property_string", -1);
+    MPV_RESOLVE(fn, "mpv_set_property_string", -1);
     return fn(ctx, name, data);
 }
 
@@ -302,7 +302,7 @@ char *mpv_get_property_string(mpv_handle *ctx, const char *name) {
     static char *(*fn)(mpv_handle*, const char*) = NULL;
     if (!fn) {
         if (!mpv_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_get_property_string");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_get_property_string");
         if (!fn) return NULL;
     }
     return fn(ctx, name);
@@ -312,7 +312,7 @@ void mpv_free(void *data) {
     static void (*fn)(void*) = NULL;
     if (!fn) {
         if (!mpv_libok()) return;
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_free");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_free");
         if (!fn) return;
     }
     fn(data);
@@ -322,7 +322,7 @@ mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout) {
     static mpv_event *(*fn)(mpv_handle*, double) = NULL;
     if (!fn) {
         if (!mpv_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_wait_event");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_wait_event");
         if (!fn) return NULL;
     }
     return fn(ctx, timeout);
@@ -332,7 +332,7 @@ const char *mpv_error_string(int error) {
     static const char *(*fn)(int) = NULL;
     if (!fn) {
         if (!mpv_libok()) return "mpv not initialized";
-        *(void **)(&fn) = get_sym(mpv_handle_lib, "mpv_error_string");
+        *(void **)(&fn) = mpv_get_sym(mpv_handle_lib, "mpv_error_string");
         if (!fn) return "mpv_error_string not resolved";
     }
     return fn(error);

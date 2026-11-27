@@ -43,20 +43,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE lexbor_lib_handle_t;
+  static lexbor_lib_handle_t lexbor_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *lexbor_get_sym(lexbor_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void lexbor_free_lib(lexbor_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *lexbor_lib_error(void) { return "LoadLibrary failed"; }
+  #define LEXBOR_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *lexbor_lib_handle_t;
+  static lexbor_lib_handle_t lexbor_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *lexbor_get_sym(lexbor_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void lexbor_free_lib(lexbor_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *lexbor_lib_error(void) { return dlerror(); }
+  #define LEXBOR_PATH_SEP ':'
 #endif
 
 /* ---------- 与 lexbor 上游 ABI 等价的最小类型 ---------- */
@@ -88,15 +88,15 @@ typedef enum {
 /* ============================================================
  * 动态加载（单库，多候选路径）
  * ============================================================ */
-static lib_handle_t lexbor_handle = NULL;
+static lexbor_lib_handle_t lexbor_handle = NULL;
 static int lexbor_init_state = 0;
 
 static void *lexbor_sym(const char *name) {
-    return lexbor_handle ? get_sym(lexbor_handle, name) : NULL;
+    return lexbor_handle ? lexbor_get_sym(lexbor_handle, name) : NULL;
 }
 
 /* 尝试加载单个库：显式路径、环境变量、LD 目录、soname、.so、Nix、默认路径 */
-static lib_handle_t lexbor_load_one(const char *library_path,
+static lexbor_lib_handle_t lexbor_load_one(const char *library_path,
                                     const char *so_soname,
                                     const char *so_plain,
                                     const char *probe_symbol,
@@ -105,7 +105,7 @@ static lib_handle_t lexbor_load_one(const char *library_path,
     static char bufs[96][1024];
     const char *candidates[96];
     int n = 0, i;
-    lib_handle_t h = NULL;
+    lexbor_lib_handle_t h = NULL;
 
     if (library_path && *library_path) {
         snprintf(bufs[n], sizeof bufs[0], "%s", library_path);
@@ -131,7 +131,7 @@ static lib_handle_t lexbor_load_one(const char *library_path,
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, LEXBOR_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -174,13 +174,13 @@ static lib_handle_t lexbor_load_one(const char *library_path,
 #endif
 
     for (i = 0; i < n; i++) {
-        h = load_lib(candidates[i]);
-        if (h && get_sym(h, probe_symbol)) {
+        h = lexbor_load_lib(candidates[i]);
+        if (h && lexbor_get_sym(h, probe_symbol)) {
             if (out_idx) *out_idx = i;
             if (out_path) *out_path = candidates[i];
             break;
         }
-        if (h) { free_lib(h); h = NULL; }
+        if (h) { lexbor_free_lib(h); h = NULL; }
     }
     return h;
 }
@@ -206,7 +206,7 @@ static int lexbor_do_load(const char *library_path) {
                                     &idx, &path);
 #endif
     if (!lexbor_handle) {
-        fprintf(stderr, "lexbor_dyn: cannot load liblexbor (%s)\n", lib_error());
+        fprintf(stderr, "lexbor_dyn: cannot load liblexbor (%s)\n", lexbor_lib_error());
         return -1;
     }
     if (path) { snprintf(path_buf, sizeof path_buf, "%s", path); path = path_buf; }
@@ -230,7 +230,7 @@ int lexbor_dyn_init(const char *library_path) {
 }
 
 void lexbor_dyn_cleanup(void) {
-    if (lexbor_handle) { free_lib(lexbor_handle); lexbor_handle = NULL; }
+    if (lexbor_handle) { lexbor_free_lib(lexbor_handle); lexbor_handle = NULL; }
     lexbor_init_state = 0;
 }
 
@@ -243,7 +243,7 @@ int lexbor_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define LEXBOR_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -262,48 +262,48 @@ ret name params {                                                          \
  * ============================================================ */
 
 /* --- 文档 --- */
-WRAP_RET(lxb_html_document_t *, lxb_html_document_create, (void), (), NULL)
+LEXBOR_WRAP_RET(lxb_html_document_t *, lxb_html_document_create, (void), (), NULL)
 
-WRAP_RET(lxb_html_document_t *, lxb_html_document_destroy,
+LEXBOR_WRAP_RET(lxb_html_document_t *, lxb_html_document_destroy,
          (lxb_html_document_t *document), (document), NULL)
 
-WRAP_RET(lxb_status_t, lxb_html_document_parse,
+LEXBOR_WRAP_RET(lxb_status_t, lxb_html_document_parse,
          (lxb_html_document_t *document, const lxb_char_t *html, size_t size),
          (document, html, size), LEXBOR_DYN_STATUS_ERROR)
 
-WRAP_RET(const lxb_char_t *, lxb_html_document_title,
+LEXBOR_WRAP_RET(const lxb_char_t *, lxb_html_document_title,
          (lxb_html_document_t *document, size_t *len), (document, len), NULL)
 
-WRAP_RET(lxb_html_body_element_t *, lxb_html_document_body_element_noi,
+LEXBOR_WRAP_RET(lxb_html_body_element_t *, lxb_html_document_body_element_noi,
          (lxb_html_document_t *document), (document), NULL)
 
 /* --- DOM 遍历（ABI 版本，非内联） --- */
-WRAP_RET(lxb_dom_node_t *, lxb_dom_node_first_child_noi,
+LEXBOR_WRAP_RET(lxb_dom_node_t *, lxb_dom_node_first_child_noi,
          (lxb_dom_node_t *node), (node), NULL)
 
-WRAP_RET(lxb_dom_node_t *, lxb_dom_node_next_noi,
+LEXBOR_WRAP_RET(lxb_dom_node_t *, lxb_dom_node_next_noi,
          (lxb_dom_node_t *node), (node), NULL)
 
-WRAP_RET(lxb_dom_node_t *, lxb_dom_node_parent_noi,
+LEXBOR_WRAP_RET(lxb_dom_node_t *, lxb_dom_node_parent_noi,
          (lxb_dom_node_t *node), (node), NULL)
 
-WRAP_RET(lxb_dom_node_type_t, lxb_dom_node_type_noi,
+LEXBOR_WRAP_RET(lxb_dom_node_type_t, lxb_dom_node_type_noi,
          (lxb_dom_node_t *node), (node), LXB_DOM_NODE_TYPE_UNDEF)
 
-WRAP_RET(const lxb_char_t *, lxb_dom_node_name,
+LEXBOR_WRAP_RET(const lxb_char_t *, lxb_dom_node_name,
          (lxb_dom_node_t *node, size_t *len), (node, len), NULL)
 
-WRAP_RET(lxb_char_t *, lxb_dom_node_text_content,
+LEXBOR_WRAP_RET(lxb_char_t *, lxb_dom_node_text_content,
          (lxb_dom_node_t *node, size_t *len), (node, len), NULL)
 
 /* --- 元素属性与标签名 --- */
-WRAP_RET(const lxb_char_t *, lxb_dom_element_get_attribute,
+LEXBOR_WRAP_RET(const lxb_char_t *, lxb_dom_element_get_attribute,
          (lxb_dom_element_t *element, const lxb_char_t *qualified_name,
           size_t qn_len, size_t *value_len),
          (element, qualified_name, qn_len, value_len), NULL)
 
-WRAP_RET(const lxb_char_t *, lxb_dom_element_tag_name,
+LEXBOR_WRAP_RET(const lxb_char_t *, lxb_dom_element_tag_name,
          (lxb_dom_element_t *element, size_t *len), (element, len), NULL)
 
-WRAP_RET(const lxb_char_t *, lxb_dom_element_local_name,
+LEXBOR_WRAP_RET(const lxb_char_t *, lxb_dom_element_local_name,
          (lxb_dom_element_t *element, size_t *len), (element, len), NULL)

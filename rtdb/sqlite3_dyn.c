@@ -51,7 +51,7 @@
  *   6. 平台默认安装路径回退（MacPorts/Homebrew/系统目录）。
  *
  * 【线程安全】
- *   init_state 的一次性初始化在单线程下正确。多线程并发首次调用
+ *   sqlite3_init_state 的一次性初始化在单线程下正确。多线程并发首次调用
  *   sqlite3_libok() 需由主线程在启动阶段先调用一次完成初始化，
  *   或由调用方自行加锁。初始化完成后状态只读，并发读取安全。
  *
@@ -90,65 +90,65 @@ typedef struct sqlite3_stmt sqlite3_stmt;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE sqlite3_lib_handle_t;
+  static sqlite3_lib_handle_t sqlite3_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *sqlite3_get_sym(sqlite3_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define DEFAULT_LIB_NAME "sqlite3.dll"
-  #define PATH_SEP ';'
+  static void sqlite3_free_lib(sqlite3_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *sqlite3_lib_error(void) { return "LoadLibrary failed"; }
+  #define SQLITE3_DEFAULT_LIB_NAME "sqlite3.dll"
+  #define SQLITE3_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *sqlite3_lib_handle_t;
+  static sqlite3_lib_handle_t sqlite3_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
+  static void *sqlite3_get_sym(sqlite3_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void sqlite3_free_lib(sqlite3_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *sqlite3_lib_error(void) { return dlerror(); }
   #ifdef __APPLE__
-    #define DEFAULT_LIB_NAME "libsqlite3.dylib"
+    #define SQLITE3_DEFAULT_LIB_NAME "libsqlite3.dylib"
   #else
-    #define DEFAULT_LIB_NAME "libsqlite3.so"
+    #define SQLITE3_DEFAULT_LIB_NAME "libsqlite3.so"
   #endif
-  #define PATH_SEP ':'
+  #define SQLITE3_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t sqlite_handle = NULL;
-static int init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
+static sqlite3_lib_handle_t sqlite_handle = NULL;
+static int sqlite3_init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define SQLITE3_MAX_CANDIDATES 64
+#define SQLITE3_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载：按优先级构造候选路径并逐个尝试
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int sqlite3_do_load(const char *library_path) {
     if (sqlite_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[SQLITE3_MAX_CANDIDATES][SQLITE3_PATH_BUF_LEN];
+    const char *candidates[SQLITE3_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < SQLITE3_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], SQLITE3_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 SQLITE3_DYN_LIB（完整文件路径） */
     const char *explicit_lib = getenv("SQLITE3_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < SQLITE3_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], SQLITE3_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -166,11 +166,11 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < SQLITE3_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, SQLITE3_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {  /* 跳过空项，避免意外加载当前目录 */
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
+                    snprintf(bufs[n], SQLITE3_PATH_BUF_LEN, "%s/%s", p, SQLITE3_DEFAULT_LIB_NAME);
                     { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
@@ -180,18 +180,18 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 直接给库名，交由系统链接器搜索 */
-    candidates[n++] = DEFAULT_LIB_NAME;
+    candidates[n++] = SQLITE3_DEFAULT_LIB_NAME;
 
     /* 5. Nix 安装的库目录 */
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
-                 home, DEFAULT_LIB_NAME);
+    if (home && *home && n < SQLITE3_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], SQLITE3_PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
+                 home, SQLITE3_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
-                 DEFAULT_LIB_NAME);
+    if (n < SQLITE3_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], SQLITE3_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
+                 SQLITE3_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -213,18 +213,18 @@ static int do_load(const char *library_path) {
     /* 逐个尝试加载 */
     int i;
     for (i = 0; i < n; i++) {
-        sqlite_handle = load_lib(candidates[i]);
+        sqlite_handle = sqlite3_load_lib(candidates[i]);
         if (sqlite_handle) break;
     }
     if (!sqlite_handle) {
-        fprintf(stderr, "sqlite3_dyn: cannot load libsqlite3 (%s)\n", lib_error());
+        fprintf(stderr, "sqlite3_dyn: cannot load libsqlite3 (%s)\n", sqlite3_lib_error());
         return -1;
     }
 
     /* 验证基础符号，确保加载的是真正的 SQLite */
-    if (!get_sym(sqlite_handle, "sqlite3_libversion")) {
+    if (!sqlite3_get_sym(sqlite_handle, "sqlite3_libversion")) {
         fprintf(stderr, "sqlite3_dyn: loaded library does not export sqlite3_libversion\n");
-        free_lib(sqlite_handle);
+        sqlite3_free_lib(sqlite_handle);
         sqlite_handle = NULL;
         return -1;
     }
@@ -236,40 +236,40 @@ static int do_load(const char *library_path) {
  * 一次性初始化：保证加载逻辑只执行一次
  * ============================================================ */
 int sqlite3_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (sqlite3_init_state == 0) {
+        sqlite3_init_state = (sqlite3_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && sqlite_handle != NULL) ? 1 : 0;
+    return (sqlite3_init_state == 1 && sqlite_handle != NULL) ? 1 : 0;
 }
 
 /* 可选的显式初始化接口：允许提前加载或指定路径 */
 int sqlite3_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (sqlite3_init_state == 1) return 0;
+    if (sqlite3_init_state == -1) return -1;
+    if (sqlite3_do_load(library_path) == 0) {
+        sqlite3_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    sqlite3_init_state = -1;
     return -1;
 }
 
 void sqlite3_dyn_cleanup(void) {
     if (sqlite_handle) {
-        free_lib(sqlite_handle);
+        sqlite3_free_lib(sqlite_handle);
         sqlite_handle = NULL;
     }
-    init_state = 0;
+    sqlite3_init_state = 0;
 }
 
 /* ============================================================
  * 按需解析宏：每个封装函数首次调用时才 dlsym 自己的符号
  * 失败时返回 fallback（对 int 函数通常是 SQLITE_ERROR）
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define SQLITE3_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!sqlite3_libok()) return fallback;                 \
-        *(void **)(&(var)) = get_sym(sqlite_handle, name);     \
+        *(void **)(&(var)) = sqlite3_get_sym(sqlite_handle, name);     \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -282,13 +282,13 @@ void sqlite3_dyn_cleanup(void) {
  * ============================================================ */
 int sqlite3_open(const char *filename, sqlite3 **ppDb) {
     static int (*fn)(const char*, sqlite3**) = NULL;
-    RESOLVE(fn, "sqlite3_open", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_open", SQLITE_ERROR);
     return fn(filename, ppDb);
 }
 
 int sqlite3_close(sqlite3 *db) {
     static int (*fn)(sqlite3*) = NULL;
-    RESOLVE(fn, "sqlite3_close", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_close", SQLITE_ERROR);
     return fn(db);
 }
 
@@ -297,32 +297,32 @@ int sqlite3_exec(sqlite3 *db, const char *sql,
                  char **errmsg) {
     static int (*fn)(sqlite3*, const char*,
                      int (*)(void*,int,char**,char**), void*, char**) = NULL;
-    RESOLVE(fn, "sqlite3_exec", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_exec", SQLITE_ERROR);
     return fn(db, sql, callback, arg, errmsg);
 }
 
 int sqlite3_prepare_v2(sqlite3 *db, const char *zSql, int nByte,
                        sqlite3_stmt **ppStmt, const char **pzTail) {
     static int (*fn)(sqlite3*, const char*, int, sqlite3_stmt**, const char**) = NULL;
-    RESOLVE(fn, "sqlite3_prepare_v2", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_prepare_v2", SQLITE_ERROR);
     return fn(db, zSql, nByte, ppStmt, pzTail);
 }
 
 int sqlite3_step(sqlite3_stmt *pStmt) {
     static int (*fn)(sqlite3_stmt*) = NULL;
-    RESOLVE(fn, "sqlite3_step", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_step", SQLITE_ERROR);
     return fn(pStmt);
 }
 
 int sqlite3_finalize(sqlite3_stmt *pStmt) {
     static int (*fn)(sqlite3_stmt*) = NULL;
-    RESOLVE(fn, "sqlite3_finalize", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_finalize", SQLITE_ERROR);
     return fn(pStmt);
 }
 
 int sqlite3_reset(sqlite3_stmt *pStmt) {
     static int (*fn)(sqlite3_stmt*) = NULL;
-    RESOLVE(fn, "sqlite3_reset", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_reset", SQLITE_ERROR);
     return fn(pStmt);
 }
 
@@ -330,7 +330,7 @@ const char *sqlite3_errmsg(sqlite3 *db) {
     static const char *(*fn)(sqlite3*) = NULL;
     if (!fn) {
         if (!sqlite3_libok()) return "sqlite3 not initialized";
-        *(void **)(&fn) = get_sym(sqlite_handle, "sqlite3_errmsg");
+        *(void **)(&fn) = sqlite3_get_sym(sqlite_handle, "sqlite3_errmsg");
         if (!fn) return "sqlite3_errmsg not resolved";
     }
     return fn(db);
@@ -338,7 +338,7 @@ const char *sqlite3_errmsg(sqlite3 *db) {
 
 int sqlite3_column_count(sqlite3_stmt *pStmt) {
     static int (*fn)(sqlite3_stmt*) = NULL;
-    RESOLVE(fn, "sqlite3_column_count", 0);
+    SQLITE3_RESOLVE(fn, "sqlite3_column_count", 0);
     return fn(pStmt);
 }
 
@@ -346,7 +346,7 @@ const char *sqlite3_column_name(sqlite3_stmt *pStmt, int N) {
     static const char *(*fn)(sqlite3_stmt*, int) = NULL;
     if (!fn) {
         if (!sqlite3_libok()) return NULL;
-        *(void **)(&fn) = get_sym(sqlite_handle, "sqlite3_column_name");
+        *(void **)(&fn) = sqlite3_get_sym(sqlite_handle, "sqlite3_column_name");
         if (!fn) return NULL;
     }
     return fn(pStmt, N);
@@ -356,7 +356,7 @@ const unsigned char *sqlite3_column_text(sqlite3_stmt *pStmt, int iCol) {
     static const unsigned char *(*fn)(sqlite3_stmt*, int) = NULL;
     if (!fn) {
         if (!sqlite3_libok()) return NULL;
-        *(void **)(&fn) = get_sym(sqlite_handle, "sqlite3_column_text");
+        *(void **)(&fn) = sqlite3_get_sym(sqlite_handle, "sqlite3_column_text");
         if (!fn) return NULL;
     }
     return fn(pStmt, iCol);
@@ -364,7 +364,7 @@ const unsigned char *sqlite3_column_text(sqlite3_stmt *pStmt, int iCol) {
 
 int sqlite3_column_int(sqlite3_stmt *pStmt, int iCol) {
     static int (*fn)(sqlite3_stmt*, int) = NULL;
-    RESOLVE(fn, "sqlite3_column_int", 0);
+    SQLITE3_RESOLVE(fn, "sqlite3_column_int", 0);
     return fn(pStmt, iCol);
 }
 
@@ -372,7 +372,7 @@ double sqlite3_column_double(sqlite3_stmt *pStmt, int iCol) {
     static double (*fn)(sqlite3_stmt*, int) = NULL;
     if (!fn) {
         if (!sqlite3_libok()) return 0.0;
-        *(void **)(&fn) = get_sym(sqlite_handle, "sqlite3_column_double");
+        *(void **)(&fn) = sqlite3_get_sym(sqlite_handle, "sqlite3_column_double");
         if (!fn) return 0.0;
     }
     return fn(pStmt, iCol);
@@ -380,32 +380,32 @@ double sqlite3_column_double(sqlite3_stmt *pStmt, int iCol) {
 
 int sqlite3_column_type(sqlite3_stmt *pStmt, int iCol) {
     static int (*fn)(sqlite3_stmt*, int) = NULL;
-    RESOLVE(fn, "sqlite3_column_type", SQLITE_NULL);
+    SQLITE3_RESOLVE(fn, "sqlite3_column_type", SQLITE_NULL);
     return fn(pStmt, iCol);
 }
 
 int sqlite3_bind_int(sqlite3_stmt *pStmt, int idx, int val) {
     static int (*fn)(sqlite3_stmt*, int, int) = NULL;
-    RESOLVE(fn, "sqlite3_bind_int", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_bind_int", SQLITE_ERROR);
     return fn(pStmt, idx, val);
 }
 
 int sqlite3_bind_text(sqlite3_stmt *pStmt, int idx, const char *val,
                       int n, void (*destructor)(void*)) {
     static int (*fn)(sqlite3_stmt*, int, const char*, int, void(*)(void*)) = NULL;
-    RESOLVE(fn, "sqlite3_bind_text", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_bind_text", SQLITE_ERROR);
     return fn(pStmt, idx, val, n, destructor);
 }
 
 int sqlite3_bind_double(sqlite3_stmt *pStmt, int idx, double val) {
     static int (*fn)(sqlite3_stmt*, int, double) = NULL;
-    RESOLVE(fn, "sqlite3_bind_double", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_bind_double", SQLITE_ERROR);
     return fn(pStmt, idx, val);
 }
 
 int sqlite3_bind_null(sqlite3_stmt *pStmt, int idx) {
     static int (*fn)(sqlite3_stmt*, int) = NULL;
-    RESOLVE(fn, "sqlite3_bind_null", SQLITE_ERROR);
+    SQLITE3_RESOLVE(fn, "sqlite3_bind_null", SQLITE_ERROR);
     return fn(pStmt, idx);
 }
 
@@ -413,7 +413,7 @@ const char *sqlite3_libversion(void) {
     static const char *(*fn)(void) = NULL;
     if (!fn) {
         if (!sqlite3_libok()) return "unknown";
-        *(void **)(&fn) = get_sym(sqlite_handle, "sqlite3_libversion");
+        *(void **)(&fn) = sqlite3_get_sym(sqlite_handle, "sqlite3_libversion");
         if (!fn) return "unknown";
     }
     return fn();

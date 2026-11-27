@@ -31,20 +31,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE expat_lib_handle_t;
+ static expat_lib_handle_t expat_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *expat_get_sym(expat_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void expat_free_lib(expat_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *expat_lib_error(void) { return "LoadLibrary failed"; }
+ #define EXPAT_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *expat_lib_handle_t;
+ static expat_lib_handle_t expat_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *expat_get_sym(expat_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void expat_free_lib(expat_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *expat_lib_error(void) { return dlerror(); }
+ #define EXPAT_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -278,11 +278,11 @@ typedef int  (*XML_UnknownEncodingHandler)(void *encodingHandlerData, const XML_
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t expat_handle = NULL;
+static expat_lib_handle_t expat_handle = NULL;
 static int expat_init_state = 0;
 
 static void *expat_sym(const char *name) {
-    return expat_handle ? get_sym(expat_handle, name) : NULL;
+    return expat_handle ? expat_get_sym(expat_handle, name) : NULL;
 }
 
 static int expat_do_load(const char *library_path) {
@@ -316,7 +316,7 @@ static int expat_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, EXPAT_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/libexpat.so.1", q);
@@ -360,12 +360,12 @@ static int expat_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        expat_handle = load_lib(candidates[i]);
+        expat_handle = expat_load_lib(candidates[i]);
         if (expat_handle) break;
     }
     if (!expat_handle || !expat_sym("XML_ParserCreate")) {
-        fprintf(stderr, "expat_dyn: cannot load expat (%s)\n", lib_error());
-        if (expat_handle) { free_lib(expat_handle); expat_handle = NULL; }
+        fprintf(stderr, "expat_dyn: cannot load expat (%s)\n", expat_lib_error());
+        if (expat_handle) { expat_free_lib(expat_handle); expat_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "expat_dyn: loaded %d %s (2.9 headers)\n", i, candidates[i]);
@@ -401,7 +401,7 @@ int expat_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define EXPAT_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -415,7 +415,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define EXPAT_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -432,86 +432,86 @@ void name params {                                                         \
 /* ============================================================
  * 导出函数封装（nm -D 全量 83 个）
  * ============================================================ */
-WRAP_VOID(XML_DefaultCurrent, (XML_Parser a0), (a0))
-WRAP_RET(const XML_LChar *, XML_ErrorString, (enum XML_Error a0), (a0), NULL)
-WRAP_RET(const XML_LChar *, XML_ExpatVersion, (void), (), NULL)
-WRAP_RET(XML_Expat_Version, XML_ExpatVersionInfo, (void), (), ((XML_Expat_Version){0, 0, 0}))
-WRAP_RET(XML_Parser, XML_ExternalEntityParserCreate, (XML_Parser a0, const XML_Char *a1, const XML_Char *a2), (a0, a1, a2), NULL)
-WRAP_VOID(XML_FreeContentModel, (XML_Parser a0, XML_Content *a1), (a0, a1))
-WRAP_RET(const XML_Char *, XML_GetBase, (XML_Parser a0), (a0), NULL)
-WRAP_RET(void *, XML_GetBuffer, (XML_Parser a0, int a1), (a0, a1), NULL)
-WRAP_RET(int, XML_GetCurrentByteCount, (XML_Parser a0), (a0), 0)
-WRAP_RET(uint64_t, XML_GetCurrentByteCount64, (XML_Parser a0), (a0), 0)
-WRAP_RET(XML_Index, XML_GetCurrentByteIndex, (XML_Parser a0), (a0), 0)
-WRAP_RET(int64_t, XML_GetCurrentByteIndex64, (XML_Parser a0), (a0), 0)
-WRAP_RET(XML_Size, XML_GetCurrentColumnNumber, (XML_Parser a0), (a0), 0)
-WRAP_RET(uint64_t, XML_GetCurrentColumnNumber64, (XML_Parser a0), (a0), 0)
-WRAP_RET(XML_Size, XML_GetCurrentLineNumber, (XML_Parser a0), (a0), 0)
-WRAP_RET(uint64_t, XML_GetCurrentLineNumber64, (XML_Parser a0), (a0), 0)
-WRAP_RET(enum XML_Error, XML_GetErrorCode, (XML_Parser a0), (a0), XML_ERROR_NONE)
-WRAP_RET(const XML_Feature *, XML_GetFeatureList, (void), (), NULL)
-WRAP_RET(int, XML_GetIdAttributeIndex, (XML_Parser a0), (a0), -1)
-WRAP_RET(const char *, XML_GetInputContext, (XML_Parser a0, int *a1, int *a2), (a0, a1, a2), NULL)
-WRAP_RET(const char *, XML_GetInputContext64, (XML_Parser a0, int64_t *a1, uint64_t *a2), (a0, a1, a2), NULL)
-WRAP_VOID(XML_GetParsingStatus, (XML_Parser a0, XML_ParsingStatus *a1), (a0, a1))
-WRAP_RET(enum XML_Prop_Error, XML_GetPropertyBool, (XML_Parser a0, enum XML_Parser_Property a1, XML_Bool *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(enum XML_Prop_Error, XML_GetPropertyDouble, (XML_Parser a0, enum XML_Parser_Property a1, double *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(enum XML_Prop_Error, XML_GetPropertyUInt64, (XML_Parser a0, enum XML_Parser_Property a1, uint64_t *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(int, XML_GetSpecifiedAttributeCount, (XML_Parser a0), (a0), -1)
-WRAP_VOID(XML_MemFree, (XML_Parser a0, void *a1), (a0, a1))
-WRAP_RET(void *, XML_MemMalloc, (XML_Parser a0, size_t a1), (a0, a1), NULL)
-WRAP_RET(void *, XML_MemRealloc, (XML_Parser a0, void *a1, size_t a2), (a0, a1, a2), NULL)
-WRAP_RET(enum XML_Status, XML_Parse, (XML_Parser a0, const char *a1, int a2, int a3), (a0, a1, a2, a3), XML_STATUS_ERROR)
-WRAP_RET(enum XML_Status, XML_ParseBuffer, (XML_Parser a0, int a1, int a2), (a0, a1, a2), XML_STATUS_ERROR)
-WRAP_RET(XML_Parser, XML_ParserCreate, (const XML_Char *a0), (a0), NULL)
-WRAP_RET(XML_Parser, XML_ParserCreate_MM, (const XML_Char *a0, const XML_Memory_Handling_Suite *a1, const XML_Char *a2), (a0, a1, a2), NULL)
-WRAP_RET(XML_Parser, XML_ParserCreateNS, (const XML_Char *a0, XML_Char a1), (a0, a1), NULL)
-WRAP_VOID(XML_ParserFree, (XML_Parser a0), (a0))
-WRAP_RET(XML_Bool, XML_ParserReset, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_FALSE)
-WRAP_RET(enum XML_Status, XML_ResumeParser, (XML_Parser a0), (a0), XML_STATUS_ERROR)
-WRAP_RET(XML_Bool, XML_SetAllocTrackerActivationThreshold, (XML_Parser a0, unsigned long long a1), (a0, a1), XML_FALSE)
-WRAP_RET(XML_Bool, XML_SetAllocTrackerMaximumAmplification, (XML_Parser a0, float a1), (a0, a1), XML_FALSE)
-WRAP_VOID(XML_SetAttlistDeclHandler, (XML_Parser a0, XML_AttlistDeclHandler a1), (a0, a1))
-WRAP_RET(enum XML_Status, XML_SetBase, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_STATUS_ERROR)
-WRAP_RET(XML_Bool, XML_SetBillionLaughsAttackProtectionActivationThreshold, (XML_Parser a0, unsigned long long a1), (a0, a1), XML_FALSE)
-WRAP_RET(XML_Bool, XML_SetBillionLaughsAttackProtectionMaximumAmplification, (XML_Parser a0, float a1), (a0, a1), XML_FALSE)
-WRAP_VOID(XML_SetCdataSectionHandler, (XML_Parser a0, XML_StartCdataSectionHandler a1, XML_EndCdataSectionHandler a2), (a0, a1, a2))
-WRAP_VOID(XML_SetCharacterDataHandler, (XML_Parser a0, XML_CharacterDataHandler a1), (a0, a1))
-WRAP_VOID(XML_SetCommentHandler, (XML_Parser a0, XML_CommentHandler a1), (a0, a1))
-WRAP_VOID(XML_SetDefaultHandler, (XML_Parser a0, XML_DefaultHandler a1), (a0, a1))
-WRAP_VOID(XML_SetDefaultHandlerExpand, (XML_Parser a0, XML_DefaultHandler a1), (a0, a1))
-WRAP_VOID(XML_SetDoctypeDeclHandler, (XML_Parser a0, XML_StartDoctypeDeclHandler a1, XML_EndDoctypeDeclHandler a2), (a0, a1, a2))
-WRAP_VOID(XML_SetElementDeclHandler, (XML_Parser a0, XML_ElementDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetElementHandler, (XML_Parser a0, XML_StartElementHandler a1, XML_EndElementHandler a2), (a0, a1, a2))
-WRAP_RET(enum XML_Status, XML_SetEncoding, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_STATUS_ERROR)
-WRAP_VOID(XML_SetEndCdataSectionHandler, (XML_Parser a0, XML_EndCdataSectionHandler a1), (a0, a1))
-WRAP_VOID(XML_SetEndDoctypeDeclHandler, (XML_Parser a0, XML_EndDoctypeDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetEndElementHandler, (XML_Parser a0, XML_EndElementHandler a1), (a0, a1))
-WRAP_VOID(XML_SetEndNamespaceDeclHandler, (XML_Parser a0, XML_EndNamespaceDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetEntityDeclHandler, (XML_Parser a0, XML_EntityDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetExternalEntityRefHandler, (XML_Parser a0, XML_ExternalEntityRefHandler a1), (a0, a1))
-WRAP_VOID(XML_SetExternalEntityRefHandlerArg, (XML_Parser a0, void *a1), (a0, a1))
-WRAP_RET(int, XML_SetHashSalt, (XML_Parser a0, unsigned long a1), (a0, a1), 0)
-WRAP_RET(XML_Bool, XML_SetHashSalt16Bytes, (XML_Parser a0, const uint8_t *a1), (a0, a1), XML_FALSE)
-WRAP_VOID(XML_SetNamespaceDeclHandler, (XML_Parser a0, XML_StartNamespaceDeclHandler a1, XML_EndNamespaceDeclHandler a2), (a0, a1, a2))
-WRAP_VOID(XML_SetNotationDeclHandler, (XML_Parser a0, XML_NotationDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetNotStandaloneHandler, (XML_Parser a0, XML_NotStandaloneHandler a1), (a0, a1))
-WRAP_RET(int, XML_SetParamEntityParsing, (XML_Parser a0, enum XML_ParamEntityParsing a1), (a0, a1), 0)
-WRAP_VOID(XML_SetProcessingInstructionHandler, (XML_Parser a0, XML_ProcessingInstructionHandler a1), (a0, a1))
-WRAP_RET(enum XML_Prop_Error, XML_SetPropertyBool, (XML_Parser a0, enum XML_Parser_Property a1, XML_Bool a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(enum XML_Prop_Error, XML_SetPropertyDouble, (XML_Parser a0, enum XML_Parser_Property a1, double a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(enum XML_Prop_Error, XML_SetPropertyUInt64, (XML_Parser a0, enum XML_Parser_Property a1, uint64_t a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
-WRAP_RET(XML_Bool, XML_SetReparseDeferralEnabled, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_FALSE)
-WRAP_VOID(XML_SetReturnNSTriplet, (XML_Parser a0, int a1), (a0, a1))
-WRAP_VOID(XML_SetSkippedEntityHandler, (XML_Parser a0, XML_SkippedEntityHandler a1), (a0, a1))
-WRAP_VOID(XML_SetStartCdataSectionHandler, (XML_Parser a0, XML_StartCdataSectionHandler a1), (a0, a1))
-WRAP_VOID(XML_SetStartDoctypeDeclHandler, (XML_Parser a0, XML_StartDoctypeDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetStartElementHandler, (XML_Parser a0, XML_StartElementHandler a1), (a0, a1))
-WRAP_VOID(XML_SetStartNamespaceDeclHandler, (XML_Parser a0, XML_StartNamespaceDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetUnknownEncodingHandler, (XML_Parser a0, XML_UnknownEncodingHandler a1, void *a2), (a0, a1, a2))
-WRAP_VOID(XML_SetUnparsedEntityDeclHandler, (XML_Parser a0, XML_UnparsedEntityDeclHandler a1), (a0, a1))
-WRAP_VOID(XML_SetUserData, (XML_Parser a0, void *a1), (a0, a1))
-WRAP_VOID(XML_SetXmlDeclHandler, (XML_Parser a0, XML_XmlDeclHandler a1), (a0, a1))
-WRAP_RET(enum XML_Status, XML_StopParser, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_STATUS_ERROR)
-WRAP_RET(enum XML_Error, XML_UseForeignDTD, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_ERROR_NONE)
-WRAP_VOID(XML_UseParserAsHandlerArg, (XML_Parser a0), (a0))
+EXPAT_WRAP_VOID(XML_DefaultCurrent, (XML_Parser a0), (a0))
+EXPAT_WRAP_RET(const XML_LChar *, XML_ErrorString, (enum XML_Error a0), (a0), NULL)
+EXPAT_WRAP_RET(const XML_LChar *, XML_ExpatVersion, (void), (), NULL)
+EXPAT_WRAP_RET(XML_Expat_Version, XML_ExpatVersionInfo, (void), (), ((XML_Expat_Version){0, 0, 0}))
+EXPAT_WRAP_RET(XML_Parser, XML_ExternalEntityParserCreate, (XML_Parser a0, const XML_Char *a1, const XML_Char *a2), (a0, a1, a2), NULL)
+EXPAT_WRAP_VOID(XML_FreeContentModel, (XML_Parser a0, XML_Content *a1), (a0, a1))
+EXPAT_WRAP_RET(const XML_Char *, XML_GetBase, (XML_Parser a0), (a0), NULL)
+EXPAT_WRAP_RET(void *, XML_GetBuffer, (XML_Parser a0, int a1), (a0, a1), NULL)
+EXPAT_WRAP_RET(int, XML_GetCurrentByteCount, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(uint64_t, XML_GetCurrentByteCount64, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(XML_Index, XML_GetCurrentByteIndex, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(int64_t, XML_GetCurrentByteIndex64, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(XML_Size, XML_GetCurrentColumnNumber, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(uint64_t, XML_GetCurrentColumnNumber64, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(XML_Size, XML_GetCurrentLineNumber, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(uint64_t, XML_GetCurrentLineNumber64, (XML_Parser a0), (a0), 0)
+EXPAT_WRAP_RET(enum XML_Error, XML_GetErrorCode, (XML_Parser a0), (a0), XML_ERROR_NONE)
+EXPAT_WRAP_RET(const XML_Feature *, XML_GetFeatureList, (void), (), NULL)
+EXPAT_WRAP_RET(int, XML_GetIdAttributeIndex, (XML_Parser a0), (a0), -1)
+EXPAT_WRAP_RET(const char *, XML_GetInputContext, (XML_Parser a0, int *a1, int *a2), (a0, a1, a2), NULL)
+EXPAT_WRAP_RET(const char *, XML_GetInputContext64, (XML_Parser a0, int64_t *a1, uint64_t *a2), (a0, a1, a2), NULL)
+EXPAT_WRAP_VOID(XML_GetParsingStatus, (XML_Parser a0, XML_ParsingStatus *a1), (a0, a1))
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_GetPropertyBool, (XML_Parser a0, enum XML_Parser_Property a1, XML_Bool *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_GetPropertyDouble, (XML_Parser a0, enum XML_Parser_Property a1, double *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_GetPropertyUInt64, (XML_Parser a0, enum XML_Parser_Property a1, uint64_t *a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(int, XML_GetSpecifiedAttributeCount, (XML_Parser a0), (a0), -1)
+EXPAT_WRAP_VOID(XML_MemFree, (XML_Parser a0, void *a1), (a0, a1))
+EXPAT_WRAP_RET(void *, XML_MemMalloc, (XML_Parser a0, size_t a1), (a0, a1), NULL)
+EXPAT_WRAP_RET(void *, XML_MemRealloc, (XML_Parser a0, void *a1, size_t a2), (a0, a1, a2), NULL)
+EXPAT_WRAP_RET(enum XML_Status, XML_Parse, (XML_Parser a0, const char *a1, int a2, int a3), (a0, a1, a2, a3), XML_STATUS_ERROR)
+EXPAT_WRAP_RET(enum XML_Status, XML_ParseBuffer, (XML_Parser a0, int a1, int a2), (a0, a1, a2), XML_STATUS_ERROR)
+EXPAT_WRAP_RET(XML_Parser, XML_ParserCreate, (const XML_Char *a0), (a0), NULL)
+EXPAT_WRAP_RET(XML_Parser, XML_ParserCreate_MM, (const XML_Char *a0, const XML_Memory_Handling_Suite *a1, const XML_Char *a2), (a0, a1, a2), NULL)
+EXPAT_WRAP_RET(XML_Parser, XML_ParserCreateNS, (const XML_Char *a0, XML_Char a1), (a0, a1), NULL)
+EXPAT_WRAP_VOID(XML_ParserFree, (XML_Parser a0), (a0))
+EXPAT_WRAP_RET(XML_Bool, XML_ParserReset, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_RET(enum XML_Status, XML_ResumeParser, (XML_Parser a0), (a0), XML_STATUS_ERROR)
+EXPAT_WRAP_RET(XML_Bool, XML_SetAllocTrackerActivationThreshold, (XML_Parser a0, unsigned long long a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_RET(XML_Bool, XML_SetAllocTrackerMaximumAmplification, (XML_Parser a0, float a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_VOID(XML_SetAttlistDeclHandler, (XML_Parser a0, XML_AttlistDeclHandler a1), (a0, a1))
+EXPAT_WRAP_RET(enum XML_Status, XML_SetBase, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_STATUS_ERROR)
+EXPAT_WRAP_RET(XML_Bool, XML_SetBillionLaughsAttackProtectionActivationThreshold, (XML_Parser a0, unsigned long long a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_RET(XML_Bool, XML_SetBillionLaughsAttackProtectionMaximumAmplification, (XML_Parser a0, float a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_VOID(XML_SetCdataSectionHandler, (XML_Parser a0, XML_StartCdataSectionHandler a1, XML_EndCdataSectionHandler a2), (a0, a1, a2))
+EXPAT_WRAP_VOID(XML_SetCharacterDataHandler, (XML_Parser a0, XML_CharacterDataHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetCommentHandler, (XML_Parser a0, XML_CommentHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetDefaultHandler, (XML_Parser a0, XML_DefaultHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetDefaultHandlerExpand, (XML_Parser a0, XML_DefaultHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetDoctypeDeclHandler, (XML_Parser a0, XML_StartDoctypeDeclHandler a1, XML_EndDoctypeDeclHandler a2), (a0, a1, a2))
+EXPAT_WRAP_VOID(XML_SetElementDeclHandler, (XML_Parser a0, XML_ElementDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetElementHandler, (XML_Parser a0, XML_StartElementHandler a1, XML_EndElementHandler a2), (a0, a1, a2))
+EXPAT_WRAP_RET(enum XML_Status, XML_SetEncoding, (XML_Parser a0, const XML_Char *a1), (a0, a1), XML_STATUS_ERROR)
+EXPAT_WRAP_VOID(XML_SetEndCdataSectionHandler, (XML_Parser a0, XML_EndCdataSectionHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetEndDoctypeDeclHandler, (XML_Parser a0, XML_EndDoctypeDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetEndElementHandler, (XML_Parser a0, XML_EndElementHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetEndNamespaceDeclHandler, (XML_Parser a0, XML_EndNamespaceDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetEntityDeclHandler, (XML_Parser a0, XML_EntityDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetExternalEntityRefHandler, (XML_Parser a0, XML_ExternalEntityRefHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetExternalEntityRefHandlerArg, (XML_Parser a0, void *a1), (a0, a1))
+EXPAT_WRAP_RET(int, XML_SetHashSalt, (XML_Parser a0, unsigned long a1), (a0, a1), 0)
+EXPAT_WRAP_RET(XML_Bool, XML_SetHashSalt16Bytes, (XML_Parser a0, const uint8_t *a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_VOID(XML_SetNamespaceDeclHandler, (XML_Parser a0, XML_StartNamespaceDeclHandler a1, XML_EndNamespaceDeclHandler a2), (a0, a1, a2))
+EXPAT_WRAP_VOID(XML_SetNotationDeclHandler, (XML_Parser a0, XML_NotationDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetNotStandaloneHandler, (XML_Parser a0, XML_NotStandaloneHandler a1), (a0, a1))
+EXPAT_WRAP_RET(int, XML_SetParamEntityParsing, (XML_Parser a0, enum XML_ParamEntityParsing a1), (a0, a1), 0)
+EXPAT_WRAP_VOID(XML_SetProcessingInstructionHandler, (XML_Parser a0, XML_ProcessingInstructionHandler a1), (a0, a1))
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_SetPropertyBool, (XML_Parser a0, enum XML_Parser_Property a1, XML_Bool a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_SetPropertyDouble, (XML_Parser a0, enum XML_Parser_Property a1, double a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(enum XML_Prop_Error, XML_SetPropertyUInt64, (XML_Parser a0, enum XML_Parser_Property a1, uint64_t a2), (a0, a1, a2), XML_PROP_ERROR_INVALID_KEY)
+EXPAT_WRAP_RET(XML_Bool, XML_SetReparseDeferralEnabled, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_FALSE)
+EXPAT_WRAP_VOID(XML_SetReturnNSTriplet, (XML_Parser a0, int a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetSkippedEntityHandler, (XML_Parser a0, XML_SkippedEntityHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetStartCdataSectionHandler, (XML_Parser a0, XML_StartCdataSectionHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetStartDoctypeDeclHandler, (XML_Parser a0, XML_StartDoctypeDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetStartElementHandler, (XML_Parser a0, XML_StartElementHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetStartNamespaceDeclHandler, (XML_Parser a0, XML_StartNamespaceDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetUnknownEncodingHandler, (XML_Parser a0, XML_UnknownEncodingHandler a1, void *a2), (a0, a1, a2))
+EXPAT_WRAP_VOID(XML_SetUnparsedEntityDeclHandler, (XML_Parser a0, XML_UnparsedEntityDeclHandler a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetUserData, (XML_Parser a0, void *a1), (a0, a1))
+EXPAT_WRAP_VOID(XML_SetXmlDeclHandler, (XML_Parser a0, XML_XmlDeclHandler a1), (a0, a1))
+EXPAT_WRAP_RET(enum XML_Status, XML_StopParser, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_STATUS_ERROR)
+EXPAT_WRAP_RET(enum XML_Error, XML_UseForeignDTD, (XML_Parser a0, XML_Bool a1), (a0, a1), XML_ERROR_NONE)
+EXPAT_WRAP_VOID(XML_UseParserAsHandlerArg, (XML_Parser a0), (a0))

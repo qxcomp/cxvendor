@@ -35,34 +35,34 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE reproc_lib_handle_t;
+  static reproc_lib_handle_t reproc_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *reproc_get_sym(reproc_lib_handle_t h, const char *name) {
       return (void *)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define DEFAULT_LIB_NAME "reproc.dll"
-  #define PATH_SEP ';'
+  static void reproc_free_lib(reproc_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *reproc_lib_error(void) { return "LoadLibrary failed"; }
+  #define REPROC_DEFAULT_LIB_NAME "reproc.dll"
+  #define REPROC_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *reproc_lib_handle_t;
+  static reproc_lib_handle_t reproc_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
+  static void *reproc_get_sym(reproc_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void reproc_free_lib(reproc_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *reproc_lib_error(void) { return dlerror(); }
   #ifdef __APPLE__
-    #define DEFAULT_LIB_NAME "libreproc.dylib"
+    #define REPROC_DEFAULT_LIB_NAME "libreproc.dylib"
   #else
-    #define DEFAULT_LIB_NAME "libreproc.so"
+    #define REPROC_DEFAULT_LIB_NAME "libreproc.so"
   #endif
-  #define PATH_SEP ':'
+  #define REPROC_PATH_SEP ':'
 #endif
 
 /* ---------- 上游头文件：存在时引入，用于原型/类型匹配检查 ----------
@@ -191,28 +191,28 @@ typedef struct reproc_sink {
 enum { REPROC_DYN_EINVAL = -22 };
 
 /* ---------- 全局状态 ---------- */
-static lib_handle_t reproc_lib = NULL;
-static int init_state = 0;   /* 0=未加载, 1=成功, -1=失败 */
+static reproc_lib_handle_t reproc_lib = NULL;
+static int reproc_init_state = 0;   /* 0=未加载, 1=成功, -1=失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define REPROC_MAX_CANDIDATES 64
+#define REPROC_PATH_BUF_LEN   1024
 
 /* ---------- 加载：按优先级构造候选路径 ---------- */
-static int do_load(const char *library_path) {
+static int reproc_do_load(const char *library_path) {
     if (reproc_lib) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[REPROC_MAX_CANDIDATES][REPROC_PATH_BUF_LEN];
+    const char *candidates[REPROC_MAX_CANDIDATES];
     int n = 0;
 
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < REPROC_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], REPROC_PATH_BUF_LEN, "%s", library_path);
         candidates[n] = bufs[n]; n++;
     }
 
     const char *explicit_lib = getenv("REPROC_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < REPROC_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], REPROC_PATH_BUF_LEN, "%s", explicit_lib);
         candidates[n] = bufs[n]; n++;
     }
 
@@ -229,11 +229,11 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < REPROC_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, REPROC_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
+                    snprintf(bufs[n], REPROC_PATH_BUF_LEN, "%s/%s", p, REPROC_DEFAULT_LIB_NAME);
                     candidates[n] = bufs[n]; n++;
                 }
                 p = sep ? sep + 1 : NULL;
@@ -242,20 +242,20 @@ static int do_load(const char *library_path) {
         }
     }
 
-    candidates[n++] = DEFAULT_LIB_NAME;
+    candidates[n++] = REPROC_DEFAULT_LIB_NAME;
 #if defined(__linux__) || defined(__ANDROID__)
     candidates[n++] = "libreproc.so.14";   /* versioned soname */
 #endif
 
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
-                 home, DEFAULT_LIB_NAME);
+    if (home && *home && n < REPROC_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], REPROC_PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
+                 home, REPROC_DEFAULT_LIB_NAME);
         candidates[n] = bufs[n]; n++;
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
-                 DEFAULT_LIB_NAME);
+    if (n < REPROC_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], REPROC_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
+                 REPROC_DEFAULT_LIB_NAME);
         candidates[n] = bufs[n]; n++;
     }
 
@@ -272,16 +272,16 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        reproc_lib = load_lib(candidates[i]);
+        reproc_lib = reproc_load_lib(candidates[i]);
         if (reproc_lib) break;
     }
     if (!reproc_lib) {
-        fprintf(stderr, "reproc_dyn: cannot load libreproc (%s)\n", lib_error());
+        fprintf(stderr, "reproc_dyn: cannot load libreproc (%s)\n", reproc_lib_error());
         return -1;
     }
-    if (!get_sym(reproc_lib, "reproc_new")) {
+    if (!reproc_get_sym(reproc_lib, "reproc_new")) {
         fprintf(stderr, "reproc_dyn: loaded library does not export reproc_new\n");
-        free_lib(reproc_lib);
+        reproc_free_lib(reproc_lib);
         reproc_lib = NULL;
         return -1;
     }
@@ -291,45 +291,45 @@ static int do_load(const char *library_path) {
 
 /* ---------- 一次性初始化 ---------- */
 int reproc_libok(void) {
-    if (init_state == 0) {
-        if (do_load(NULL) != 0) {
-            init_state = -1;
+    if (reproc_init_state == 0) {
+        if (reproc_do_load(NULL) != 0) {
+            reproc_init_state = -1;
             return 0;
         }
-        init_state = 1;
+        reproc_init_state = 1;
     }
-    return (init_state == 1 && reproc_lib != NULL) ? 1 : 0;
+    return (reproc_init_state == 1 && reproc_lib != NULL) ? 1 : 0;
 }
 
 int reproc_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) != 0) {
-        init_state = -1;
+    if (reproc_init_state == 1) return 0;
+    if (reproc_init_state == -1) return -1;
+    if (reproc_do_load(library_path) != 0) {
+        reproc_init_state = -1;
         return -1;
     }
-    init_state = 1;
+    reproc_init_state = 1;
     return 0;
 }
 
 void reproc_dyn_cleanup(void) {
     if (reproc_lib) {
-        free_lib(reproc_lib);
+        reproc_free_lib(reproc_lib);
         reproc_lib = NULL;
     }
-    init_state = 0;
+    reproc_init_state = 0;
 }
 
 int reproc_dyn_has_symbol(const char *name) {
     if (!reproc_libok()) return 0;
-    return get_sym(reproc_lib, name) != NULL;
+    return reproc_get_sym(reproc_lib, name) != NULL;
 }
 
 /* ---------- 按需解析宏 ---------- */
-#define RESOLVE(var, name, fallback) do {                    \
+#define REPROC_RESOLVE(var, name, fallback) do {                    \
     if (!(var)) {                                            \
         if (!reproc_libok()) return fallback;                \
-        *(void **)(&(var)) = get_sym(reproc_lib, name);      \
+        *(void **)(&(var)) = reproc_get_sym(reproc_lib, name);      \
         if (!(var)) {                                        \
             fprintf(stderr, "dlsym failed: %s\n", name);     \
             return fallback;                                 \
@@ -340,87 +340,87 @@ int reproc_dyn_has_symbol(const char *name) {
 /* ---------- 封装函数：与上游 reproc 同名（真实头文件存在时编译器校验签名） ---------- */
 reproc_t *reproc_new(void) {
     static reproc_t *(*fn)(void) = NULL;
-    RESOLVE(fn, "reproc_new", NULL);
+    REPROC_RESOLVE(fn, "reproc_new", NULL);
     return fn();
 }
 
 int reproc_start(reproc_t *process, const char *const *argv,
                  reproc_options options) {
     static int (*fn)(reproc_t *, const char *const *, reproc_options) = NULL;
-    RESOLVE(fn, "reproc_start", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_start", REPROC_DYN_EINVAL);
     return fn(process, argv, options);
 }
 
 int reproc_pid(reproc_t *process) {
     static int (*fn)(reproc_t *) = NULL;
-    RESOLVE(fn, "reproc_pid", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_pid", REPROC_DYN_EINVAL);
     return fn(process);
 }
 
 int reproc_poll(reproc_event_source *sources, size_t num_sources, int timeout) {
     static int (*fn)(reproc_event_source *, size_t, int) = NULL;
-    RESOLVE(fn, "reproc_poll", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_poll", REPROC_DYN_EINVAL);
     return fn(sources, num_sources, timeout);
 }
 
 int reproc_read(reproc_t *process, REPROC_STREAM stream,
                 uint8_t *buffer, size_t size) {
     static int (*fn)(reproc_t *, REPROC_STREAM, uint8_t *, size_t) = NULL;
-    RESOLVE(fn, "reproc_read", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_read", REPROC_DYN_EINVAL);
     return fn(process, stream, buffer, size);
 }
 
 int reproc_write(reproc_t *process, const uint8_t *buffer, size_t size) {
     static int (*fn)(reproc_t *, const uint8_t *, size_t) = NULL;
-    RESOLVE(fn, "reproc_write", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_write", REPROC_DYN_EINVAL);
     return fn(process, buffer, size);
 }
 
 int reproc_close(reproc_t *process, REPROC_STREAM stream) {
     static int (*fn)(reproc_t *, REPROC_STREAM) = NULL;
-    RESOLVE(fn, "reproc_close", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_close", REPROC_DYN_EINVAL);
     return fn(process, stream);
 }
 
 int reproc_wait(reproc_t *process, int timeout) {
     static int (*fn)(reproc_t *, int) = NULL;
-    RESOLVE(fn, "reproc_wait", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_wait", REPROC_DYN_EINVAL);
     return fn(process, timeout);
 }
 
 int reproc_terminate(reproc_t *process) {
     static int (*fn)(reproc_t *) = NULL;
-    RESOLVE(fn, "reproc_terminate", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_terminate", REPROC_DYN_EINVAL);
     return fn(process);
 }
 
 int reproc_kill(reproc_t *process) {
     static int (*fn)(reproc_t *) = NULL;
-    RESOLVE(fn, "reproc_kill", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_kill", REPROC_DYN_EINVAL);
     return fn(process);
 }
 
 int reproc_stop(reproc_t *process, reproc_stop_actions stop) {
     static int (*fn)(reproc_t *, reproc_stop_actions) = NULL;
-    RESOLVE(fn, "reproc_stop", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_stop", REPROC_DYN_EINVAL);
     return fn(process, stop);
 }
 
 reproc_t *reproc_destroy(reproc_t *process) {
     static reproc_t *(*fn)(reproc_t *) = NULL;
-    RESOLVE(fn, "reproc_destroy", NULL);
+    REPROC_RESOLVE(fn, "reproc_destroy", NULL);
     return fn(process);
 }
 
 const char *reproc_strerror(int error) {
     static const char *(*fn)(int) = NULL;
-    RESOLVE(fn, "reproc_strerror", "reproc not initialized");
+    REPROC_RESOLVE(fn, "reproc_strerror", "reproc not initialized");
     return fn(error);
 }
 
 int reproc_run(const char *const *argv, reproc_options options) {
     static int (*fn)(const char *const *, reproc_options) = NULL;
-    RESOLVE(fn, "reproc_run", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_run", REPROC_DYN_EINVAL);
     return fn(argv, options);
 }
 
@@ -428,27 +428,27 @@ int reproc_run_ex(const char *const *argv, reproc_options options,
                   reproc_sink out, reproc_sink err) {
     static int (*fn)(const char *const *, reproc_options,
                      reproc_sink, reproc_sink) = NULL;
-    RESOLVE(fn, "reproc_run_ex", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_run_ex", REPROC_DYN_EINVAL);
     return fn(argv, options, out, err);
 }
 
 int reproc_drain(reproc_t *process, reproc_sink out, reproc_sink err) {
     static int (*fn)(reproc_t *, reproc_sink, reproc_sink) = NULL;
-    RESOLVE(fn, "reproc_drain", REPROC_DYN_EINVAL);
+    REPROC_RESOLVE(fn, "reproc_drain", REPROC_DYN_EINVAL);
     return fn(process, out, err);
 }
 
 reproc_sink reproc_sink_string(char **output) {
     static reproc_sink (*fn)(char **) = NULL;
     reproc_sink empty = { NULL, NULL };
-    RESOLVE(fn, "reproc_sink_string", empty);
+    REPROC_RESOLVE(fn, "reproc_sink_string", empty);
     return fn(output);
 }
 
 reproc_sink reproc_sink_discard(void) {
     static reproc_sink (*fn)(void) = NULL;
     reproc_sink empty = { NULL, NULL };
-    RESOLVE(fn, "reproc_sink_discard", empty);
+    REPROC_RESOLVE(fn, "reproc_sink_discard", empty);
     return fn();
 }
 
@@ -456,7 +456,7 @@ void *reproc_free(void *ptr) {
     static void *(*fn)(void *) = NULL;
     if (!fn) {
         if (!reproc_libok()) return NULL;
-        *(void **)(&fn) = get_sym(reproc_lib, "reproc_free");
+        *(void **)(&fn) = reproc_get_sym(reproc_lib, "reproc_free");
         if (!fn) return NULL;
     }
     return fn(ptr);

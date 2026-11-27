@@ -24,20 +24,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  typedef HMODULE lcm_lib_handle_t;
+  static lcm_lib_handle_t lcm_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *lcm_get_sym(lcm_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+  static void lcm_free_lib(lcm_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *lcm_lib_error(void) { return "LoadLibrary failed"; }
+  #define LCM_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  typedef void *lcm_lib_handle_t;
+  static lcm_lib_handle_t lcm_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+  static void *lcm_get_sym(lcm_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void lcm_free_lib(lcm_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *lcm_lib_error(void) { return dlerror(); }
+  #define LCM_PATH_SEP ':'
 #endif
 
 /* ---------- 类型（lcm.h / eventlog.h 原样内嵌） ---------- */
@@ -69,11 +69,11 @@ struct _lcm_eventlog_event_t {
 };
 
 /* ---------- 动态层状态 ---------- */
-static lib_handle_t lcm_lib_handle = NULL;
+static lcm_lib_handle_t lcm_lib_handle = NULL;
 static int lcm_init_state = 0;
 
 static void *lcm_sym(const char *name) {
-    return lcm_lib_handle ? get_sym(lcm_lib_handle, name) : NULL;
+    return lcm_lib_handle ? lcm_get_sym(lcm_lib_handle, name) : NULL;
 }
 
 static int lcm_do_load(const char *library_path) {
@@ -111,7 +111,7 @@ static int lcm_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 50) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, LCM_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q && n + 3 < 64) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -157,12 +157,12 @@ static int lcm_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        lcm_lib_handle = load_lib(candidates[i]);
+        lcm_lib_handle = lcm_load_lib(candidates[i]);
         if (lcm_lib_handle) { res = i; break; }
     }
     if (!lcm_lib_handle || !lcm_sym("lcm_create")) {
-        fprintf(stderr, "lcm_dyn: cannot load lcm (%s)\n", lib_error());
-        if (lcm_lib_handle) { free_lib(lcm_lib_handle); lcm_lib_handle = NULL; }
+        fprintf(stderr, "lcm_dyn: cannot load lcm (%s)\n", lcm_lib_error());
+        if (lcm_lib_handle) { lcm_free_lib(lcm_lib_handle); lcm_lib_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "lcm_dyn: loaded %d %s\n", res, candidates[res]);
@@ -185,7 +185,7 @@ int lcm_dyn_init(const char *library_path) {
 }
 
 void lcm_dyn_cleanup(void) {
-    if (lcm_lib_handle) { free_lib(lcm_lib_handle); lcm_lib_handle = NULL; }
+    if (lcm_lib_handle) { lcm_free_lib(lcm_lib_handle); lcm_lib_handle = NULL; }
     lcm_init_state = 0;
 }
 
@@ -197,7 +197,7 @@ int lcm_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define LCM_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -210,7 +210,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define LCM_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -225,19 +225,19 @@ void name params {                                                             \
 }
 
 /* ---------- 16 个公开函数（函数名原样） ---------- */
-WRAP_RET(lcm_t *, lcm_create, (const char *provider), (provider), NULL)
-WRAP_VOID(lcm_destroy, (lcm_t *lcm), (lcm))
-WRAP_RET(int, lcm_get_fileno, (lcm_t *lcm), (lcm), -1)
-WRAP_RET(lcm_subscription_t *, lcm_subscribe, (lcm_t *lcm, const char *channel, lcm_msg_handler_t handler, void *user_data), (lcm, channel, handler, user_data), NULL)
-WRAP_RET(int, lcm_unsubscribe, (lcm_t *lcm, lcm_subscription_t *handler), (lcm, handler), -1)
-WRAP_RET(int, lcm_publish, (lcm_t *lcm, const char *channel, const void *data, unsigned int datalen), (lcm, channel, data, datalen), -1)
-WRAP_RET(int, lcm_handle, (lcm_t *lcm), (lcm), -1)
-WRAP_RET(int, lcm_handle_timeout, (lcm_t *lcm, int timeout_millis), (lcm, timeout_millis), -1)
-WRAP_RET(int, lcm_subscription_set_queue_capacity, (lcm_subscription_t *handler, int num_messages), (handler, num_messages), -1)
-WRAP_RET(int, lcm_subscription_get_queue_size, (lcm_subscription_t *handler), (handler), -1)
-WRAP_RET(lcm_eventlog_t *, lcm_eventlog_create, (const char *path, const char *mode), (path, mode), NULL)
-WRAP_RET(lcm_eventlog_event_t *, lcm_eventlog_read_next_event, (lcm_eventlog_t *eventlog), (eventlog), NULL)
-WRAP_VOID(lcm_eventlog_free_event, (lcm_eventlog_event_t *event), (event))
-WRAP_RET(int, lcm_eventlog_seek_to_timestamp, (lcm_eventlog_t *eventlog, int64_t ts), (eventlog, ts), -1)
-WRAP_RET(int, lcm_eventlog_write_event, (lcm_eventlog_t *eventlog, lcm_eventlog_event_t *event), (eventlog, event), -1)
-WRAP_VOID(lcm_eventlog_destroy, (lcm_eventlog_t *eventlog), (eventlog))
+LCM_WRAP_RET(lcm_t *, lcm_create, (const char *provider), (provider), NULL)
+LCM_WRAP_VOID(lcm_destroy, (lcm_t *lcm), (lcm))
+LCM_WRAP_RET(int, lcm_get_fileno, (lcm_t *lcm), (lcm), -1)
+LCM_WRAP_RET(lcm_subscription_t *, lcm_subscribe, (lcm_t *lcm, const char *channel, lcm_msg_handler_t handler, void *user_data), (lcm, channel, handler, user_data), NULL)
+LCM_WRAP_RET(int, lcm_unsubscribe, (lcm_t *lcm, lcm_subscription_t *handler), (lcm, handler), -1)
+LCM_WRAP_RET(int, lcm_publish, (lcm_t *lcm, const char *channel, const void *data, unsigned int datalen), (lcm, channel, data, datalen), -1)
+LCM_WRAP_RET(int, lcm_handle, (lcm_t *lcm), (lcm), -1)
+LCM_WRAP_RET(int, lcm_handle_timeout, (lcm_t *lcm, int timeout_millis), (lcm, timeout_millis), -1)
+LCM_WRAP_RET(int, lcm_subscription_set_queue_capacity, (lcm_subscription_t *handler, int num_messages), (handler, num_messages), -1)
+LCM_WRAP_RET(int, lcm_subscription_get_queue_size, (lcm_subscription_t *handler), (handler), -1)
+LCM_WRAP_RET(lcm_eventlog_t *, lcm_eventlog_create, (const char *path, const char *mode), (path, mode), NULL)
+LCM_WRAP_RET(lcm_eventlog_event_t *, lcm_eventlog_read_next_event, (lcm_eventlog_t *eventlog), (eventlog), NULL)
+LCM_WRAP_VOID(lcm_eventlog_free_event, (lcm_eventlog_event_t *event), (event))
+LCM_WRAP_RET(int, lcm_eventlog_seek_to_timestamp, (lcm_eventlog_t *eventlog, int64_t ts), (eventlog, ts), -1)
+LCM_WRAP_RET(int, lcm_eventlog_write_event, (lcm_eventlog_t *eventlog, lcm_eventlog_event_t *event), (eventlog, event), -1)
+LCM_WRAP_VOID(lcm_eventlog_destroy, (lcm_eventlog_t *eventlog), (eventlog))

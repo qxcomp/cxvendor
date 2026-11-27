@@ -31,20 +31,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE thrift_c_glib_lib_handle_t;
+ static thrift_c_glib_lib_handle_t thrift_c_glib_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *thrift_c_glib_get_sym(thrift_c_glib_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void thrift_c_glib_free_lib(thrift_c_glib_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *thrift_c_glib_lib_error(void) { return "LoadLibrary failed"; }
+ #define THRIFT_C_GLIB_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *thrift_c_glib_lib_handle_t;
+ static thrift_c_glib_lib_handle_t thrift_c_glib_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *thrift_c_glib_get_sym(thrift_c_glib_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void thrift_c_glib_free_lib(thrift_c_glib_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *thrift_c_glib_lib_error(void) { return dlerror(); }
+ #define THRIFT_C_GLIB_PATH_SEP ':'
 #endif
 
 /* ---------- glib 基础类型（原样内嵌，保证 ABI 宽度一致） ---------- */
@@ -97,11 +97,11 @@ typedef gboolean (*AUTHORIZATION_MANAGER_CALLBACK)(ThriftTransport *, void *, vo
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t thrift_c_glib_handle = NULL;
+static thrift_c_glib_lib_handle_t thrift_c_glib_handle = NULL;
 static int thrift_c_glib_init_state = 0;
 
 static void *thrift_c_glib_sym(const char *name) {
-    return thrift_c_glib_handle ? get_sym(thrift_c_glib_handle, name) : NULL;
+    return thrift_c_glib_handle ? thrift_c_glib_get_sym(thrift_c_glib_handle, name) : NULL;
 }
 
 static int thrift_c_glib_do_load(const char *library_path) {
@@ -138,7 +138,7 @@ static int thrift_c_glib_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, THRIFT_C_GLIB_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -178,13 +178,13 @@ static int thrift_c_glib_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        thrift_c_glib_handle = load_lib(candidates[i]);
+        thrift_c_glib_handle = thrift_c_glib_load_lib(candidates[i]);
         // printf("try %d %s\n", i, candidates[i]);
         if (thrift_c_glib_handle) { res = i; break; }
     }
     if (!thrift_c_glib_handle || !thrift_c_glib_sym("thrift_transport_get_type")) {
-        fprintf(stderr, "thrift_c_glib_dyn: cannot load thrift_c_glib (%s)\n", lib_error());
-        if (thrift_c_glib_handle) { free_lib(thrift_c_glib_handle); thrift_c_glib_handle = NULL; }
+        fprintf(stderr, "thrift_c_glib_dyn: cannot load thrift_c_glib (%s)\n", thrift_c_glib_lib_error());
+        if (thrift_c_glib_handle) { thrift_c_glib_free_lib(thrift_c_glib_handle); thrift_c_glib_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "thrift_c_glib_dyn: loaded %d %s\n", res, candidates[res]);
@@ -207,7 +207,7 @@ int thrift_c_glib_dyn_init(const char *library_path) {
 }
 
 void thrift_c_glib_dyn_cleanup(void) {
-    if (thrift_c_glib_handle) { free_lib(thrift_c_glib_handle); thrift_c_glib_handle = NULL; }
+    if (thrift_c_glib_handle) { thrift_c_glib_free_lib(thrift_c_glib_handle); thrift_c_glib_handle = NULL; }
     thrift_c_glib_init_state = 0;
 }
 
@@ -219,7 +219,7 @@ int thrift_c_glib_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define THRIFT_C_GLIB_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -232,7 +232,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define THRIFT_C_GLIB_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -250,232 +250,232 @@ void name params {                                                             \
  * 导出函数封装（thrift/c_glib 头文件声明的 133 个函数）
  * ============================================================ */
 /* --- GType get_type (31) --- */
-WRAP_RET(GType, thrift_application_exception_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_binary_protocol_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_binary_protocol_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_buffered_transport_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_buffered_transport_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_compact_protocol_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_compact_protocol_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_configuration_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_dispatch_processor_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_fd_transport_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_framed_transport_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_framed_transport_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_memory_buffer_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_multiplexed_processor_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_multiplexed_protocol_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_processor_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_protocol_decorator_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_protocol_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_protocol_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_server_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_server_socket_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_server_transport_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_simple_server_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_socket_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_ssl_socket_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_stored_message_protocol_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_struct_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_transport_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_transport_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_zlib_transport_factory_get_type, (void), (), 0)
-WRAP_RET(GType, thrift_zlib_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_application_exception_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_binary_protocol_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_binary_protocol_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_buffered_transport_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_buffered_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_compact_protocol_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_compact_protocol_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_configuration_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_dispatch_processor_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_fd_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_framed_transport_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_framed_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_memory_buffer_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_multiplexed_processor_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_multiplexed_protocol_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_processor_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_protocol_decorator_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_protocol_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_protocol_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_server_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_server_socket_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_server_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_simple_server_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_socket_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_ssl_socket_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_stored_message_protocol_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_struct_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_transport_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_transport_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_zlib_transport_factory_get_type, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GType, thrift_zlib_transport_get_type, (void), (), 0)
 
 /* --- GQuark error_quark (5) --- */
-WRAP_RET(GQuark, thrift_application_exception_error_quark, (void), (), 0)
-WRAP_RET(GQuark, thrift_multiplexed_processor_error_quark, (void), (), 0)
-WRAP_RET(GQuark, thrift_protocol_error_quark, (void), (), 0)
-WRAP_RET(GQuark, thrift_server_socket_error_quark, (void), (), 0)
-WRAP_RET(GQuark, thrift_transport_error_quark, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GQuark, thrift_application_exception_error_quark, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GQuark, thrift_multiplexed_processor_error_quark, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GQuark, thrift_protocol_error_quark, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GQuark, thrift_server_socket_error_quark, (void), (), 0)
+THRIFT_C_GLIB_WRAP_RET(GQuark, thrift_transport_error_quark, (void), (), 0)
 
 /* --- hash / equal (6) --- */
-WRAP_RET(guint, thrift_boolean_hash, (gconstpointer v), (v), 0)
-WRAP_RET(guint, thrift_int8_hash, (gconstpointer v), (v), 0)
-WRAP_RET(guint, thrift_int16_hash, (gconstpointer v), (v), 0)
-WRAP_RET(gboolean, thrift_boolean_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
-WRAP_RET(gboolean, thrift_int8_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
-WRAP_RET(gboolean, thrift_int16_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
+THRIFT_C_GLIB_WRAP_RET(guint, thrift_boolean_hash, (gconstpointer v), (v), 0)
+THRIFT_C_GLIB_WRAP_RET(guint, thrift_int8_hash, (gconstpointer v), (v), 0)
+THRIFT_C_GLIB_WRAP_RET(guint, thrift_int16_hash, (gconstpointer v), (v), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_boolean_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_int8_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_int16_equal, (gconstpointer a, gconstpointer b), (a, b), 0)
 
 /* --- 工具函数 (3) --- */
-WRAP_VOID(thrift_hash_table_get_keys, (gpointer key, gpointer value, gpointer user_data), (key, value, user_data))
-WRAP_VOID(thrift_safe_hash_table_destroy, (GHashTable *hash_table), (hash_table))
-WRAP_VOID(thrift_string_free, (gpointer str), (str))
+THRIFT_C_GLIB_WRAP_VOID(thrift_hash_table_get_keys, (gpointer key, gpointer value, gpointer user_data), (key, value, user_data))
+THRIFT_C_GLIB_WRAP_VOID(thrift_safe_hash_table_destroy, (GHashTable *hash_table), (hash_table))
+THRIFT_C_GLIB_WRAP_VOID(thrift_string_free, (gpointer str), (str))
 
 /* --- processor (4) --- */
-WRAP_RET(gboolean, thrift_dispatch_processor_process,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_dispatch_processor_process,
          (ThriftProcessor *processor, ThriftProtocol *in, ThriftProtocol *out, GError **error),
          (processor, in, out, error), 0)
-WRAP_RET(gboolean, thrift_processor_process,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_processor_process,
          (ThriftProcessor *processor, ThriftProtocol *in, ThriftProtocol *out, GError **error),
          (processor, in, out, error), 0)
-WRAP_RET(gboolean, thrift_multiplexed_processor_process,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_multiplexed_processor_process,
          (ThriftMultiplexedProcessor *processor, ThriftProtocol *in, ThriftProtocol *out, GError **error),
          (processor, in, out, error), 0)
-WRAP_RET(gboolean, thrift_multiplexed_processor_register_processor,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_multiplexed_processor_register_processor,
          (ThriftProcessor *processor, const gchar *name, ThriftProcessor *mp, GError **error),
          (processor, name, mp, error), 0)
 
 /* --- protocol factory / decorator (4) --- */
-WRAP_RET(ThriftProtocol *, thrift_protocol_factory_get_protocol,
+THRIFT_C_GLIB_WRAP_RET(ThriftProtocol *, thrift_protocol_factory_get_protocol,
          (ThriftProtocolFactory *factory, ThriftTransport *transport), (factory, transport), NULL)
-WRAP_RET(gint32, thrift_protocol_decorator_write_message_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_decorator_write_message_begin,
          (ThriftProtocol *protocol, const gchar *name, const ThriftMessageType message_type,
           const gint32 seqid, GError **error), (protocol, name, message_type, seqid, error), 0)
-WRAP_RET(gint, thrift_binary_protocol_get_min_serialized_size,
+THRIFT_C_GLIB_WRAP_RET(gint, thrift_binary_protocol_get_min_serialized_size,
          (ThriftProtocol *protocol, ThriftType type, GError **error), (protocol, type, error), 0)
-WRAP_RET(gint, thrift_protocol_get_min_serialized_size,
+THRIFT_C_GLIB_WRAP_RET(gint, thrift_protocol_get_min_serialized_size,
          (ThriftProtocol *protocol, ThriftType type, GError **error), (protocol, type, error), 0)
 
 /* --- protocol write (21) --- */
-WRAP_RET(gint32, thrift_protocol_write_message_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_message_begin,
          (ThriftProtocol *protocol, const gchar *name, const ThriftMessageType message_type,
           const gint32 seqid, GError **error), (protocol, name, message_type, seqid, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_message_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_struct_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_message_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_struct_begin,
          (ThriftProtocol *protocol, const gchar *name, GError **error), (protocol, name, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_struct_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_field_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_struct_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_field_begin,
          (ThriftProtocol *protocol, const gchar *name, const ThriftType field_type,
           const gint16 field_id, GError **error), (protocol, name, field_type, field_id, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_field_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_field_stop, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_map_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_field_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_field_stop, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_map_begin,
          (ThriftProtocol *protocol, const ThriftType key_type, const ThriftType value_type,
           const guint32 size, GError **error), (protocol, key_type, value_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_map_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_list_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_map_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_list_begin,
          (ThriftProtocol *protocol, const ThriftType element_type, const guint32 size, GError **error),
          (protocol, element_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_list_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_set_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_list_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_set_begin,
          (ThriftProtocol *protocol, const ThriftType element_type, const guint32 size, GError **error),
          (protocol, element_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_set_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_bool,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_set_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_bool,
          (ThriftProtocol *protocol, const gboolean value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_byte,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_byte,
          (ThriftProtocol *protocol, const gint8 value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_i16,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_i16,
          (ThriftProtocol *protocol, const gint16 value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_i32,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_i32,
          (ThriftProtocol *protocol, const gint32 value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_i64,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_i64,
          (ThriftProtocol *protocol, const gint64 value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_double,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_double,
          (ThriftProtocol *protocol, const gdouble value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_string,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_string,
          (ThriftProtocol *protocol, const gchar *str, GError **error), (protocol, str, error), 0)
-WRAP_RET(gint32, thrift_protocol_write_binary,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_write_binary,
          (ThriftProtocol *protocol, const gpointer buf, const guint32 len, GError **error),
          (protocol, buf, len, error), 0)
 
 /* --- protocol read (21) --- */
-WRAP_RET(gint32, thrift_protocol_read_message_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_message_begin,
          (ThriftProtocol *protocol, gchar **name, ThriftMessageType *message_type, gint32 *seqid, GError **error),
          (protocol, name, message_type, seqid, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_message_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_struct_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_message_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_struct_begin,
          (ThriftProtocol *protocol, gchar **name, GError **error), (protocol, name, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_struct_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_field_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_struct_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_field_begin,
          (ThriftProtocol *protocol, gchar **name, ThriftType *field_type, gint16 *field_id, GError **error),
          (protocol, name, field_type, field_id, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_field_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_map_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_field_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_map_begin,
          (ThriftProtocol *protocol, ThriftType *key_type, ThriftType *value_type, guint32 *size, GError **error),
          (protocol, key_type, value_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_map_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_list_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_map_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_list_begin,
          (ThriftProtocol *protocol, ThriftType *element_type, guint32 *size, GError **error),
          (protocol, element_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_list_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_set_begin,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_list_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_set_begin,
          (ThriftProtocol *protocol, ThriftType *element_type, guint32 *size, GError **error),
          (protocol, element_type, size, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_set_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_bool,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_set_end, (ThriftProtocol *protocol, GError **error), (protocol, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_bool,
          (ThriftProtocol *protocol, gboolean *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_byte,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_byte,
          (ThriftProtocol *protocol, gint8 *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_i16,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_i16,
          (ThriftProtocol *protocol, gint16 *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_i32,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_i32,
          (ThriftProtocol *protocol, gint32 *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_i64,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_i64,
          (ThriftProtocol *protocol, gint64 *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_double,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_double,
          (ThriftProtocol *protocol, gdouble *value, GError **error), (protocol, value, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_string,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_string,
          (ThriftProtocol *protocol, gchar **str, GError **error), (protocol, str, error), 0)
-WRAP_RET(gint32, thrift_protocol_read_binary,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_read_binary,
          (ThriftProtocol *protocol, gpointer *buf, guint32 *len, GError **error), (protocol, buf, len, error), 0)
-WRAP_RET(gint32, thrift_protocol_skip,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_protocol_skip,
          (ThriftProtocol *protocol, ThriftType type, GError **error), (protocol, type, error), 0)
 
 /* --- struct read/write (2) --- */
-WRAP_RET(gint32, thrift_struct_read,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_struct_read,
          (ThriftStruct *object, ThriftProtocol *protocol, GError **error), (object, protocol, error), 0)
-WRAP_RET(gint32, thrift_struct_write,
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_struct_write,
          (ThriftStruct *object, ThriftProtocol *protocol, GError **error), (object, protocol, error), 0)
 
 /* --- transport (17) --- */
-WRAP_RET(gboolean, thrift_transport_is_open, (ThriftTransport *transport), (transport), 0)
-WRAP_RET(gboolean, thrift_transport_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_transport_peek, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_transport_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gint32, thrift_transport_read,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_is_open, (ThriftTransport *transport), (transport), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_peek, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_transport_read,
          (ThriftTransport *transport, gpointer buf, guint32 len, GError **error), (transport, buf, len, error), 0)
-WRAP_RET(gboolean, thrift_transport_read_end, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_transport_write,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_read_end, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_write,
          (ThriftTransport *transport, const gpointer buf, const guint32 len, GError **error),
          (transport, buf, len, error), 0)
-WRAP_RET(gboolean, thrift_transport_write_end, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_transport_flush, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gint32, thrift_transport_read_all,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_write_end, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_transport_flush, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gint32, thrift_transport_read_all,
          (ThriftTransport *transport, gpointer buf, guint32 len, GError **error), (transport, buf, len, error), 0)
-WRAP_RET(gboolean, thrift_socket_is_open, (ThriftTransport *transport), (transport), 0)
-WRAP_RET(gboolean, thrift_socket_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_socket_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_ssl_socket_is_open, (ThriftTransport *transport), (transport), 0)
-WRAP_RET(gboolean, thrift_ssl_socket_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_ssl_socket_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_ssl_socket_authorize, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_socket_is_open, (ThriftTransport *transport), (transport), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_socket_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_socket_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_socket_is_open, (ThriftTransport *transport), (transport), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_socket_open, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_socket_close, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_socket_authorize, (ThriftTransport *transport, GError **error), (transport, error), 0)
 
 /* --- transport factory (4) --- */
-WRAP_RET(ThriftTransport *, thrift_buffered_transport_factory_get_transport,
+THRIFT_C_GLIB_WRAP_RET(ThriftTransport *, thrift_buffered_transport_factory_get_transport,
          (ThriftTransportFactory *factory, ThriftTransport *transport), (factory, transport), NULL)
-WRAP_RET(ThriftTransport *, thrift_framed_transport_factory_get_transport,
+THRIFT_C_GLIB_WRAP_RET(ThriftTransport *, thrift_framed_transport_factory_get_transport,
          (ThriftTransportFactory *factory, ThriftTransport *transport), (factory, transport), NULL)
-WRAP_RET(ThriftTransport *, thrift_zlib_transport_factory_get_transport,
+THRIFT_C_GLIB_WRAP_RET(ThriftTransport *, thrift_zlib_transport_factory_get_transport,
          (ThriftTransportFactory *factory, ThriftTransport *transport), (factory, transport), NULL)
-WRAP_RET(ThriftTransport *, thrift_transport_factory_get_transport,
+THRIFT_C_GLIB_WRAP_RET(ThriftTransport *, thrift_transport_factory_get_transport,
          (ThriftTransportFactory *factory, ThriftTransport *transport), (factory, transport), NULL)
 
 /* --- server transport (3) --- */
-WRAP_RET(gboolean, thrift_server_transport_listen, (ThriftServerTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(ThriftTransport *, thrift_server_transport_accept, (ThriftServerTransport *transport, GError **error), (transport, error), NULL)
-WRAP_RET(gboolean, thrift_server_transport_close, (ThriftServerTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_server_transport_listen, (ThriftServerTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(ThriftTransport *, thrift_server_transport_accept, (ThriftServerTransport *transport, GError **error), (transport, error), NULL)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_server_transport_close, (ThriftServerTransport *transport, GError **error), (transport, error), 0)
 
 /* --- server (2) --- */
-WRAP_RET(gboolean, thrift_server_serve, (ThriftServer *server, GError **error), (server, error), 0)
-WRAP_VOID(thrift_server_stop, (ThriftServer *server), (server))
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_server_serve, (ThriftServer *server, GError **error), (server, error), 0)
+THRIFT_C_GLIB_WRAP_VOID(thrift_server_stop, (ThriftServer *server), (server))
 
 /* --- ssl socket (10) --- */
-WRAP_RET(SSL_CTX *, thrift_ssl_socket_context_initialize,
+THRIFT_C_GLIB_WRAP_RET(SSL_CTX *, thrift_ssl_socket_context_initialize,
          (ThriftSSLSocketProtocol ssl_protocol, GError **error), (ssl_protocol, error), NULL)
-WRAP_RET(ThriftSSLSocket *, thrift_ssl_socket_new,
+THRIFT_C_GLIB_WRAP_RET(ThriftSSLSocket *, thrift_ssl_socket_new,
          (ThriftSSLSocketProtocol ssl_protocol, GError **error), (ssl_protocol, error), NULL)
-WRAP_RET(ThriftSSLSocket *, thrift_ssl_socket_new_with_host,
+THRIFT_C_GLIB_WRAP_RET(ThriftSSLSocket *, thrift_ssl_socket_new_with_host,
          (ThriftSSLSocketProtocol ssl_protocol, gchar *hostname, guint port, GError **error),
          (ssl_protocol, hostname, port, error), NULL)
-WRAP_RET(gboolean, thrift_ssl_load_cert_from_file,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_load_cert_from_file,
          (ThriftSSLSocket *ssl_socket, const char *file_name), (ssl_socket, file_name), 0)
-WRAP_RET(gboolean, thrift_ssl_load_cert_from_buffer,
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_ssl_load_cert_from_buffer,
          (ThriftSSLSocket *ssl_socket, const char chain_certs[]), (ssl_socket, chain_certs), 0)
-WRAP_VOID(thrift_ssl_socket_set_manager,
+THRIFT_C_GLIB_WRAP_VOID(thrift_ssl_socket_set_manager,
           (ThriftSSLSocket *ssl_socket, AUTHORIZATION_MANAGER_CALLBACK callback), (ssl_socket, callback))
-WRAP_VOID(thrift_ssl_socket_initialize_openssl, (void), ())
-WRAP_VOID(thrift_ssl_socket_finalize_openssl, (void), ())
-WRAP_RET(gboolean, thrift_zlib_transport_verify_checksum, (ThriftTransport *transport, GError **error), (transport, error), 0)
-WRAP_RET(gboolean, thrift_zlib_transport_finish, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_VOID(thrift_ssl_socket_initialize_openssl, (void), ())
+THRIFT_C_GLIB_WRAP_VOID(thrift_ssl_socket_finalize_openssl, (void), ())
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_zlib_transport_verify_checksum, (ThriftTransport *transport, GError **error), (transport, error), 0)
+THRIFT_C_GLIB_WRAP_RET(gboolean, thrift_zlib_transport_finish, (ThriftTransport *transport, GError **error), (transport, error), 0)

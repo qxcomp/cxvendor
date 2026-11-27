@@ -51,34 +51,34 @@ void re2_dyn_sync_globals(void) {
  * ============================================================ */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) {
+ typedef HMODULE re2_lib_handle_t;
+ static re2_lib_handle_t re2_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *re2_get_sym(re2_lib_handle_t h, const char *name) {
      return (void *)GetProcAddress(h, name);
  }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ static void re2_free_lib(re2_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *re2_lib_error(void) { return "LoadLibrary failed"; }
+ #define RE2_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) {
+ typedef void *re2_lib_handle_t;
+ static re2_lib_handle_t re2_load_lib(const char *path) {
      return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ static void *re2_get_sym(re2_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void re2_free_lib(re2_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *re2_lib_error(void) { return dlerror(); }
+ #define RE2_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态与库加载
  * ============================================================ */
-static lib_handle_t re2_handle = NULL;
+static re2_lib_handle_t re2_handle = NULL;
 static int re2_init_state = 0;
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define RE2_MAX_CANDIDATES 64
+#define RE2_PATH_BUF_LEN   1024
 
 static const char *re2_defaults[] = {
 "libre2.so.11", "libre2.so", "libre2.dylib", "re2.dll"
@@ -86,17 +86,17 @@ static const char *re2_defaults[] = {
 
 static int re2_do_load(const char *library_path) {
     if (re2_handle) return 0;
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[RE2_MAX_CANDIDATES][RE2_PATH_BUF_LEN];
+    const char *candidates[RE2_MAX_CANDIDATES];
     int n = 0, i;
 
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < RE2_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], RE2_PATH_BUF_LEN, "%s", library_path);
         candidates[n] = bufs[n]; n++;
     }
     const char *explicit_lib = getenv("RE2_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < RE2_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], RE2_PATH_BUF_LEN, "%s", explicit_lib);
         candidates[n] = bufs[n]; n++;
     }
     const char *env_path = getenv(
@@ -112,13 +112,13 @@ static int re2_do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < RE2_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, RE2_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
                     for (i = 0; i < (int)(sizeof(re2_defaults)/sizeof(re2_defaults[0])); i++) {
-                        if (n >= MAX_CANDIDATES - 2) break;
-                        snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, re2_defaults[i]);
+                        if (n >= RE2_MAX_CANDIDATES - 2) break;
+                        snprintf(bufs[n], RE2_PATH_BUF_LEN, "%s/%s", p, re2_defaults[i]);
                         candidates[n] = bufs[n]; n++;
                     }
                 }
@@ -127,30 +127,30 @@ static int re2_do_load(const char *library_path) {
             free(copy);
         }
     }
-    for (i = 0; i < (int)(sizeof(re2_defaults)/sizeof(re2_defaults[0])) && n < MAX_CANDIDATES - 1; i++)
+    for (i = 0; i < (int)(sizeof(re2_defaults)/sizeof(re2_defaults[0])) && n < RE2_MAX_CANDIDATES - 1; i++)
         candidates[n++] = re2_defaults[i];
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s", home, re2_defaults[0]);
+    if (home && *home && n < RE2_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], RE2_PATH_BUF_LEN, "%s/.nix-profile/lib/%s", home, re2_defaults[0]);
         candidates[n] = bufs[n]; n++;
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s", re2_defaults[0]);
+    if (n < RE2_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], RE2_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s", re2_defaults[0]);
         candidates[n] = bufs[n]; n++;
     }
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        re2_handle = load_lib(candidates[i]);
+        re2_handle = re2_load_lib(candidates[i]);
         if (re2_handle) break;
     }
     if (!re2_handle) {
-        fprintf(stderr, "re2_dyn: cannot load library (%s)\n", lib_error());
+        fprintf(stderr, "re2_dyn: cannot load library (%s)\n", re2_lib_error());
         return -1;
     }
-    if (!get_sym(re2_handle, "_ZNK3re23RE211ProgramSizeEv")) {
+    if (!re2_get_sym(re2_handle, "_ZNK3re23RE211ProgramSizeEv")) {
         fprintf(stderr, "re2_dyn: loaded library does not export _ZNK3re23RE211ProgramSizeEv\n");
-        free_lib(re2_handle); re2_handle = NULL;
+        re2_free_lib(re2_handle); re2_handle = NULL;
         return -1;
     }
     fprintf(stderr, "re2_dyn: loaded %d %s\n", i, candidates[i]);
@@ -158,7 +158,7 @@ static int re2_do_load(const char *library_path) {
     return 0;
 }
 
-void *re2_sym(const char *name) { return re2_handle ? get_sym(re2_handle, name) : NULL; }
+void *re2_sym(const char *name) { return re2_handle ? re2_get_sym(re2_handle, name) : NULL; }
 
 int re2_libok(void) {
     if (re2_init_state == 0)
@@ -186,7 +186,7 @@ int re2_dyn_has_symbol(const char *name) {
  * WRAP 宏：首次调用 dlsym 并缓存；失败打印 stderr 并返回安全值
  * 注意：name 就是 C++ mangled symbol；非静态成员的第一个参数是 this。
  * ============================================================ */
-#define WRAP_RE2_RET(ret, name, params, args, fallback)                    \
+#define RE2_WRAP_RE2_RET(ret, name, params, args, fallback)                    \
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
@@ -200,7 +200,7 @@ ret name params {                                                         \
     return fn args;                                                       \
 }
 
-#define WRAP_RE2_VOID(name, params, args)                                 \
+#define RE2_WRAP_RE2_VOID(name, params, args)                                 \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
@@ -214,66 +214,66 @@ void name params {                                                        \
     fn args;                                                              \
 }
 /* ---------- 全量函数封装（原始 mangled symbol） ---------- */
-WRAP_RE2_RET(void *, _ZN3re23RE2C1EPKc, (void *self, const char *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C2EPKc, (void *self, const char *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C1ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C2ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C2ESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEERKNS0_7OptionsE, (void *self, re2_sv a0, void *a1), (self, a0, a1), self)
-WRAP_RE2_RET(void *, _ZN3re23RE2C2ESt17basic_string_viewIcSt11char_traitsIcEERKNS0_7OptionsE, (void *self, re2_sv a0, void *a1), (self, a0, a1), self)
-WRAP_RE2_VOID(_ZN3re23RE2D1Ev, (void *self), (self))
-WRAP_RE2_VOID(_ZN3re23RE2D2Ev, (void *self), (self))
-WRAP_RE2_RET(int, _ZNK3re23RE211ProgramSizeEv, (void *self), (self), 0)
-WRAP_RE2_RET(int, _ZNK3re23RE218ReverseProgramSizeEv, (void *self), (self), 0)
-WRAP_RE2_RET(int, _ZNK3re23RE213ProgramFanoutEPSt6vectorIiSaIiEE, (void *self, void *a0), (self, a0), 0)
-WRAP_RE2_RET(int, _ZNK3re23RE220ReverseProgramFanoutEPSt6vectorIiSaIiEE, (void *self, void *a0), (self, a0), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE210FullMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE213PartialMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE28ConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv *a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE215FindAndConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv *a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
-WRAP_RE2_RET(re2_std_string, _ZN3re23RE29QuoteMetaB5cxx11ESt17basic_string_viewIcSt11char_traitsIcEE, (re2_sv a0), (a0), re2_string_zero)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE218CheckRewriteStringESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS3_SaIcEEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
-WRAP_RE2_RET(int, _ZN3re23RE211MaxSubmatchESt17basic_string_viewIcSt11char_traitsIcEE, (re2_sv a0), (a0), 0)
-WRAP_RE2_RET(void *, _ZNK3re23RE220NamedCapturingGroupsB5cxx11Ev, (void *self), (self), NULL)
-WRAP_RE2_RET(void *, _ZNK3re23RE219CapturingGroupNamesB5cxx11Ev, (void *self), (self), NULL)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE218PossibleMatchRangeEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES7_i, (void *self, void *a0, void *a1, int a2), (self, a0, a1, a2), 0)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE25MatchESt17basic_string_viewIcSt11char_traitsIcEEmmNS0_6AnchorEPS4_i, (void *self, re2_sv a0, size_t a1, size_t a2, int a3, re2_sv *a4, int a5), (self, a0, a1, a2, a3, a4, a5), 0)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE27RewriteEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt17basic_string_viewIcS4_EPKS9_i, (void *self, void *a0, re2_sv a1, const re2_sv *a2, int a3), (self, a0, a1, a2, a3), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE27ReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E, (void *a0, void *a1, re2_sv a2), (a0, a1, a2), 0)
-WRAP_RE2_RET(int, _ZN3re23RE213GlobalReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E, (void *a0, void *a1, re2_sv a2), (a0, a1, a2), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE27ExtractESt17basic_string_viewIcSt11char_traitsIcEERKS0_S4_PNSt7__cxx1112basic_stringIcS3_SaIcEEE, (re2_sv a0, void *a1, re2_sv a2, void *a3), (a0, a1, a2, a3), 0)
-WRAP_RE2_VOID(_ZN3re23RE245FUZZING_ONLY_set_maximum_global_replace_countEi, (int a0), (a0))
-WRAP_RE2_RET(void *, _ZN3re23RE27OptionsC1ENS0_13CannedOptionsE, (void *self, int a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE27OptionsC2ENS0_13CannedOptionsE, (void *self, int a0), (self, a0), self)
-WRAP_RE2_RET(int, _ZNK3re23RE27Options10ParseFlagsEv, (void *self), (self), 0)
-WRAP_RE2_RET(void *, _ZN3re23RE23SetC1ERKNS0_7OptionsENS0_6AnchorE, (void *self, void *a0, int a1), (self, a0, a1), self)
-WRAP_RE2_RET(void *, _ZN3re23RE23SetC2ERKNS0_7OptionsENS0_6AnchorE, (void *self, void *a0, int a1), (self, a0, a1), self)
-WRAP_RE2_VOID(_ZN3re23RE23SetD1Ev, (void *self), (self))
-WRAP_RE2_VOID(_ZN3re23RE23SetD2Ev, (void *self), (self))
-WRAP_RE2_RET(void *, _ZN3re23RE23SetC1EOS1_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE23SetC2EOS1_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re23RE23SetaSEOS1_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(int, _ZN3re23RE23Set3AddESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS4_SaIcEEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
-WRAP_RE2_RET(int, _ZNK3re23RE23Set4SizeEv, (void *self), (self), 0)
-WRAP_RE2_RET(unsigned char, _ZN3re23RE23Set7CompileEv, (void *self), (self), 0)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
-WRAP_RE2_RET(unsigned char, _ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEEPNS1_9ErrorInfoE, (void *self, re2_sv a0, void *a1, void *a2), (self, a0, a1, a2), 0)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1Ev, (void *self), (self), self)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2Ev, (void *self), (self), self)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1Ei, (void *self, int a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2Ei, (void *self, int a0), (self, a0), self)
-WRAP_RE2_VOID(_ZN3re211FilteredRE2D1Ev, (void *self), (self))
-WRAP_RE2_VOID(_ZN3re211FilteredRE2D2Ev, (void *self), (self))
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1EOS0_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2EOS0_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(void *, _ZN3re211FilteredRE2aSEOS0_, (void *self, void *a0), (self, a0), self)
-WRAP_RE2_RET(int, _ZN3re211FilteredRE23AddESt17basic_string_viewIcSt11char_traitsIcEERKNS_3RE27OptionsEPi, (void *self, re2_sv a0, void *a1, int *a2), (self, a0, a1, a2), 0)
-WRAP_RE2_VOID(_ZN3re211FilteredRE27CompileEPSt6vectorINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESaIS7_EE, (void *self, void *a0), (self, a0))
-WRAP_RE2_RET(int, _ZNK3re211FilteredRE214SlowFirstMatchESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), 0)
-WRAP_RE2_RET(int, _ZNK3re211FilteredRE210FirstMatchESt17basic_string_viewIcSt11char_traitsIcEERKSt6vectorIiSaIiEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
-WRAP_RE2_RET(unsigned char, _ZNK3re211FilteredRE210AllMatchesESt17basic_string_viewIcSt11char_traitsIcEERKSt6vectorIiSaIiEEPS7_, (void *self, re2_sv a0, void *a1, void *a2), (self, a0, a1, a2), 0)
-WRAP_RE2_VOID(_ZNK3re211FilteredRE213AllPotentialsERKSt6vectorIiSaIiEEPS3_, (void *self, void *a0, void *a1), (self, a0, a1))
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C1EPKc, (void *self, const char *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C2EPKc, (void *self, const char *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C1ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C2ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C2ESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEERKNS0_7OptionsE, (void *self, re2_sv a0, void *a1), (self, a0, a1), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE2C2ESt17basic_string_viewIcSt11char_traitsIcEERKNS0_7OptionsE, (void *self, re2_sv a0, void *a1), (self, a0, a1), self)
+RE2_WRAP_RE2_VOID(_ZN3re23RE2D1Ev, (void *self), (self))
+RE2_WRAP_RE2_VOID(_ZN3re23RE2D2Ev, (void *self), (self))
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE211ProgramSizeEv, (void *self), (self), 0)
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE218ReverseProgramSizeEv, (void *self), (self), 0)
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE213ProgramFanoutEPSt6vectorIiSaIiEE, (void *self, void *a0), (self, a0), 0)
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE220ReverseProgramFanoutEPSt6vectorIiSaIiEE, (void *self, void *a0), (self, a0), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE210FullMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE213PartialMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE28ConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv *a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE215FindAndConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi, (re2_sv *a0, void *a1, const void *const *a2, int a3), (a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_RET(re2_std_string, _ZN3re23RE29QuoteMetaB5cxx11ESt17basic_string_viewIcSt11char_traitsIcEE, (re2_sv a0), (a0), re2_string_zero)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE218CheckRewriteStringESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS3_SaIcEEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
+RE2_WRAP_RE2_RET(int, _ZN3re23RE211MaxSubmatchESt17basic_string_viewIcSt11char_traitsIcEE, (re2_sv a0), (a0), 0)
+RE2_WRAP_RE2_RET(void *, _ZNK3re23RE220NamedCapturingGroupsB5cxx11Ev, (void *self), (self), NULL)
+RE2_WRAP_RE2_RET(void *, _ZNK3re23RE219CapturingGroupNamesB5cxx11Ev, (void *self), (self), NULL)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE218PossibleMatchRangeEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES7_i, (void *self, void *a0, void *a1, int a2), (self, a0, a1, a2), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE25MatchESt17basic_string_viewIcSt11char_traitsIcEEmmNS0_6AnchorEPS4_i, (void *self, re2_sv a0, size_t a1, size_t a2, int a3, re2_sv *a4, int a5), (self, a0, a1, a2, a3, a4, a5), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE27RewriteEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt17basic_string_viewIcS4_EPKS9_i, (void *self, void *a0, re2_sv a1, const re2_sv *a2, int a3), (self, a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE27ReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E, (void *a0, void *a1, re2_sv a2), (a0, a1, a2), 0)
+RE2_WRAP_RE2_RET(int, _ZN3re23RE213GlobalReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E, (void *a0, void *a1, re2_sv a2), (a0, a1, a2), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE27ExtractESt17basic_string_viewIcSt11char_traitsIcEERKS0_S4_PNSt7__cxx1112basic_stringIcS3_SaIcEEE, (re2_sv a0, void *a1, re2_sv a2, void *a3), (a0, a1, a2, a3), 0)
+RE2_WRAP_RE2_VOID(_ZN3re23RE245FUZZING_ONLY_set_maximum_global_replace_countEi, (int a0), (a0))
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE27OptionsC1ENS0_13CannedOptionsE, (void *self, int a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE27OptionsC2ENS0_13CannedOptionsE, (void *self, int a0), (self, a0), self)
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE27Options10ParseFlagsEv, (void *self), (self), 0)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE23SetC1ERKNS0_7OptionsENS0_6AnchorE, (void *self, void *a0, int a1), (self, a0, a1), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE23SetC2ERKNS0_7OptionsENS0_6AnchorE, (void *self, void *a0, int a1), (self, a0, a1), self)
+RE2_WRAP_RE2_VOID(_ZN3re23RE23SetD1Ev, (void *self), (self))
+RE2_WRAP_RE2_VOID(_ZN3re23RE23SetD2Ev, (void *self), (self))
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE23SetC1EOS1_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE23SetC2EOS1_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re23RE23SetaSEOS1_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(int, _ZN3re23RE23Set3AddESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS4_SaIcEEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
+RE2_WRAP_RE2_RET(int, _ZNK3re23RE23Set4SizeEv, (void *self), (self), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZN3re23RE23Set7CompileEv, (void *self), (self), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEEPNS1_9ErrorInfoE, (void *self, re2_sv a0, void *a1, void *a2), (self, a0, a1, a2), 0)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1Ev, (void *self), (self), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2Ev, (void *self), (self), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1Ei, (void *self, int a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2Ei, (void *self, int a0), (self, a0), self)
+RE2_WRAP_RE2_VOID(_ZN3re211FilteredRE2D1Ev, (void *self), (self))
+RE2_WRAP_RE2_VOID(_ZN3re211FilteredRE2D2Ev, (void *self), (self))
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C1EOS0_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2C2EOS0_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(void *, _ZN3re211FilteredRE2aSEOS0_, (void *self, void *a0), (self, a0), self)
+RE2_WRAP_RE2_RET(int, _ZN3re211FilteredRE23AddESt17basic_string_viewIcSt11char_traitsIcEERKNS_3RE27OptionsEPi, (void *self, re2_sv a0, void *a1, int *a2), (self, a0, a1, a2), 0)
+RE2_WRAP_RE2_VOID(_ZN3re211FilteredRE27CompileEPSt6vectorINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESaIS7_EE, (void *self, void *a0), (self, a0))
+RE2_WRAP_RE2_RET(int, _ZNK3re211FilteredRE214SlowFirstMatchESt17basic_string_viewIcSt11char_traitsIcEE, (void *self, re2_sv a0), (self, a0), 0)
+RE2_WRAP_RE2_RET(int, _ZNK3re211FilteredRE210FirstMatchESt17basic_string_viewIcSt11char_traitsIcEERKSt6vectorIiSaIiEE, (void *self, re2_sv a0, void *a1), (self, a0, a1), 0)
+RE2_WRAP_RE2_RET(unsigned char, _ZNK3re211FilteredRE210AllMatchesESt17basic_string_viewIcSt11char_traitsIcEERKSt6vectorIiSaIiEEPS7_, (void *self, re2_sv a0, void *a1, void *a2), (self, a0, a1, a2), 0)
+RE2_WRAP_RE2_VOID(_ZNK3re211FilteredRE213AllPotentialsERKSt6vectorIiSaIiEEPS3_, (void *self, void *a0, void *a1), (self, a0, a1))
 /* ---------- 未封装的内部/私有导出符号，共 420 个 ---------- */
 /* _ZN3re210PCREWalker9PostVisitEPNS_6RegexpEbbPbi */
 /* _ZN3re210chartoruneEPiPKc */

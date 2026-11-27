@@ -30,20 +30,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE opendal_lib_handle_t;
+ static opendal_lib_handle_t opendal_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *opendal_get_sym(opendal_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void opendal_free_lib(opendal_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *opendal_lib_error(void) { return "LoadLibrary failed"; }
+ #define OPENDAL_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *opendal_lib_handle_t;
+ static opendal_lib_handle_t opendal_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *opendal_get_sym(opendal_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void opendal_free_lib(opendal_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *opendal_lib_error(void) { return dlerror(); }
+ #define OPENDAL_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -349,11 +349,11 @@ typedef struct opendal_result_copier_next {
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t opendal_handle = NULL;
+static opendal_lib_handle_t opendal_handle = NULL;
 static int opendal_init_state = 0;
 
 static void *opendal_sym(const char *name) {
-    return opendal_handle ? get_sym(opendal_handle, name) : NULL;
+    return opendal_handle ? opendal_get_sym(opendal_handle, name) : NULL;
 }
 
 static int opendal_do_load(const char *library_path) {
@@ -387,7 +387,7 @@ static int opendal_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, OPENDAL_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/libopendal_c.so", q);
@@ -425,13 +425,13 @@ static int opendal_do_load(const char *library_path) {
 
 	int res = -1;
     for (i = 0; i < n; i++) {
-        opendal_handle = load_lib(candidates[i]);
+        opendal_handle = opendal_load_lib(candidates[i]);
         // printf("try %d %s\n", i, candidates[i]);
         if (opendal_handle) { res = i; break; }
     }
     if (!opendal_handle || !opendal_sym("opendal_operator_new")) {
-        fprintf(stderr, "opendal_dyn: cannot load opendal (%s)\n", lib_error());
-        if (opendal_handle) { free_lib(opendal_handle); opendal_handle = NULL; }
+        fprintf(stderr, "opendal_dyn: cannot load opendal (%s)\n", opendal_lib_error());
+        if (opendal_handle) { opendal_free_lib(opendal_handle); opendal_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "opendal_dyn: loaded %d %s\n", res, candidates[res]);
@@ -466,7 +466,7 @@ int opendal_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define OPENDAL_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -480,7 +480,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define OPENDAL_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -499,192 +499,192 @@ void name params {                                                         \
  * ============================================================ */
 
 /* --- 错误、lister、layers --- */
-WRAP_VOID(opendal_error_free, (struct opendal_error *ptr), (ptr))
-WRAP_RET(struct opendal_result_lister_next, opendal_lister_next, (struct opendal_lister *self), (self), ((struct opendal_result_lister_next){0}))
-WRAP_VOID(opendal_lister_free, (struct opendal_lister *ptr), (ptr))
-WRAP_RET(struct opendal_operator_layers *, opendal_operator_layers_new, (void), (), NULL)
-WRAP_VOID(opendal_operator_layers_add_retry, (struct opendal_operator_layers *self, bool jitter, float factor, uint64_t min_delay_ns, uint64_t max_delay_ns, uint64_t max_times), (self, jitter, factor, min_delay_ns, max_delay_ns, max_times))
-WRAP_VOID(opendal_operator_layers_add_timeout, (struct opendal_operator_layers *self, uint64_t timeout_ns, uint64_t io_timeout_ns), (self, timeout_ns, io_timeout_ns))
-WRAP_VOID(opendal_operator_layers_free, (struct opendal_operator_layers *ptr), (ptr))
+OPENDAL_WRAP_VOID(opendal_error_free, (struct opendal_error *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_result_lister_next, opendal_lister_next, (struct opendal_lister *self), (self), ((struct opendal_result_lister_next){0}))
+OPENDAL_WRAP_VOID(opendal_lister_free, (struct opendal_lister *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_operator_layers *, opendal_operator_layers_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_operator_layers_add_retry, (struct opendal_operator_layers *self, bool jitter, float factor, uint64_t min_delay_ns, uint64_t max_delay_ns, uint64_t max_times), (self, jitter, factor, min_delay_ns, max_delay_ns, max_times))
+OPENDAL_WRAP_VOID(opendal_operator_layers_add_timeout, (struct opendal_operator_layers *self, uint64_t timeout_ns, uint64_t io_timeout_ns), (self, timeout_ns, io_timeout_ns))
+OPENDAL_WRAP_VOID(opendal_operator_layers_free, (struct opendal_operator_layers *ptr), (ptr))
 
 /* --- metadata --- */
-WRAP_VOID(opendal_metadata_free, (struct opendal_metadata *ptr), (ptr))
-WRAP_RET(uint8_t, opendal_metadata_mode, (const struct opendal_metadata *self), (self), 0)
-WRAP_RET(uint64_t, opendal_metadata_content_length, (const struct opendal_metadata *self), (self), 0)
-WRAP_RET(bool, opendal_metadata_is_file, (const struct opendal_metadata *self), (self), false)
-WRAP_RET(bool, opendal_metadata_is_dir, (const struct opendal_metadata *self), (self), false)
-WRAP_RET(uint8_t, opendal_metadata_is_current, (const struct opendal_metadata *self), (self), 0)
-WRAP_RET(bool, opendal_metadata_is_deleted, (const struct opendal_metadata *self), (self), false)
-WRAP_RET(char *, opendal_metadata_cache_control, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_content_disposition, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_content_md5, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_content_type, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_content_encoding, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_etag, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(char *, opendal_metadata_version, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(struct opendal_metadata_user_metadata *, opendal_metadata_get_user_metadata, (const struct opendal_metadata *self), (self), NULL)
-WRAP_RET(int64_t, opendal_metadata_last_modified_ms, (const struct opendal_metadata *self), (self), 0)
-WRAP_RET(const struct opendal_metadata_user_metadata_pair *, opendal_metadata_user_metadata_pairs, (const struct opendal_metadata_user_metadata *metadata), (metadata), NULL)
-WRAP_RET(uintptr_t, opendal_metadata_user_metadata_len, (const struct opendal_metadata_user_metadata *metadata), (metadata), 0)
-WRAP_VOID(opendal_metadata_user_metadata_free, (struct opendal_metadata_user_metadata *metadata), (metadata))
+OPENDAL_WRAP_VOID(opendal_metadata_free, (struct opendal_metadata *ptr), (ptr))
+OPENDAL_WRAP_RET(uint8_t, opendal_metadata_mode, (const struct opendal_metadata *self), (self), 0)
+OPENDAL_WRAP_RET(uint64_t, opendal_metadata_content_length, (const struct opendal_metadata *self), (self), 0)
+OPENDAL_WRAP_RET(bool, opendal_metadata_is_file, (const struct opendal_metadata *self), (self), false)
+OPENDAL_WRAP_RET(bool, opendal_metadata_is_dir, (const struct opendal_metadata *self), (self), false)
+OPENDAL_WRAP_RET(uint8_t, opendal_metadata_is_current, (const struct opendal_metadata *self), (self), 0)
+OPENDAL_WRAP_RET(bool, opendal_metadata_is_deleted, (const struct opendal_metadata *self), (self), false)
+OPENDAL_WRAP_RET(char *, opendal_metadata_cache_control, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_content_disposition, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_content_md5, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_content_type, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_content_encoding, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_etag, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_metadata_version, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(struct opendal_metadata_user_metadata *, opendal_metadata_get_user_metadata, (const struct opendal_metadata *self), (self), NULL)
+OPENDAL_WRAP_RET(int64_t, opendal_metadata_last_modified_ms, (const struct opendal_metadata *self), (self), 0)
+OPENDAL_WRAP_RET(const struct opendal_metadata_user_metadata_pair *, opendal_metadata_user_metadata_pairs, (const struct opendal_metadata_user_metadata *metadata), (metadata), NULL)
+OPENDAL_WRAP_RET(uintptr_t, opendal_metadata_user_metadata_len, (const struct opendal_metadata_user_metadata *metadata), (metadata), 0)
+OPENDAL_WRAP_VOID(opendal_metadata_user_metadata_free, (struct opendal_metadata_user_metadata *metadata), (metadata))
 
 /* --- operator 与 info/capability --- */
-WRAP_VOID(opendal_operator_free, (const struct opendal_operator *ptr), (ptr))
-WRAP_RET(struct opendal_result_operator_new, opendal_operator_new, (const char *scheme, const struct opendal_operator_options *options), (scheme, options), ((struct opendal_result_operator_new){0}))
-WRAP_RET(struct opendal_result_operator_new, opendal_operator_new_with_layers, (const char *scheme, const struct opendal_operator_options *options, const struct opendal_operator_layers *layers), (scheme, options, layers), ((struct opendal_result_operator_new){0}))
-WRAP_RET(struct opendal_error *, opendal_operator_write, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes), (op, path, bytes), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_write_with, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes, const struct opendal_write_options *opts), (op, path, bytes, opts), NULL)
-WRAP_RET(struct opendal_result_write, opendal_operator_write_with_metadata, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes, const struct opendal_write_options *opts), (op, path, bytes, opts), ((struct opendal_result_write){0}))
-WRAP_RET(struct opendal_result_read, opendal_operator_read, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_read){0}))
-WRAP_RET(struct opendal_result_read, opendal_operator_read_with, (const struct opendal_operator *op, const char *path, const struct opendal_read_options *opts), (op, path, opts), ((struct opendal_result_read){0}))
-WRAP_RET(struct opendal_result_operator_reader, opendal_operator_reader, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_operator_reader){0}))
-WRAP_RET(struct opendal_result_operator_reader, opendal_operator_reader_with, (const struct opendal_operator *op, const char *path, const struct opendal_reader_options *opts), (op, path, opts), ((struct opendal_result_operator_reader){0}))
-WRAP_RET(struct opendal_result_operator_writer, opendal_operator_writer, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_operator_writer){0}))
-WRAP_RET(struct opendal_result_operator_writer, opendal_operator_writer_with, (const struct opendal_operator *op, const char *path, const struct opendal_write_options *opts), (op, path, opts), ((struct opendal_result_operator_writer){0}))
-WRAP_RET(struct opendal_error *, opendal_operator_delete, (const struct opendal_operator *op, const char *path), (op, path), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_delete_with, (const struct opendal_operator *op, const char *path, const struct opendal_delete_options *opts), (op, path, opts), NULL)
-WRAP_RET(struct opendal_result_is_exist, opendal_operator_is_exist, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_is_exist){0}))
-WRAP_RET(struct opendal_result_exists, opendal_operator_exists, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_exists){0}))
-WRAP_RET(struct opendal_result_stat, opendal_operator_stat, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_stat){0}))
-WRAP_RET(struct opendal_result_stat, opendal_operator_stat_with, (const struct opendal_operator *op, const char *path, const struct opendal_stat_options *opts), (op, path, opts), ((struct opendal_result_stat){0}))
-WRAP_RET(struct opendal_result_list, opendal_operator_list, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_list){0}))
-WRAP_RET(struct opendal_result_list, opendal_operator_list_with, (const struct opendal_operator *op, const char *path, const struct opendal_list_options *opts), (op, path, opts), ((struct opendal_result_list){0}))
-WRAP_RET(struct opendal_error *, opendal_operator_create_dir, (const struct opendal_operator *op, const char *path), (op, path), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_rename, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_copy, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_copy_with, (const struct opendal_operator *op, const char *src, const char *dest, const struct opendal_copy_options *opts), (op, src, dest, opts), NULL)
-WRAP_RET(struct opendal_error *, opendal_operator_check, (const struct opendal_operator *op), (op), NULL)
-WRAP_RET(struct opendal_result_operator_copier, opendal_operator_copier, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), ((struct opendal_result_operator_copier){0}))
-WRAP_RET(struct opendal_result_operator_copier, opendal_operator_copier_with, (const struct opendal_operator *op, const char *src, const char *dest, const struct opendal_copy_options *opts), (op, src, dest, opts), ((struct opendal_result_operator_copier){0}))
-WRAP_RET(struct opendal_operator_info *, opendal_operator_info_new, (const struct opendal_operator *op), (op), NULL)
-WRAP_VOID(opendal_operator_info_free, (struct opendal_operator_info *ptr), (ptr))
-WRAP_RET(char *, opendal_operator_info_get_scheme, (const struct opendal_operator_info *self), (self), NULL)
-WRAP_RET(char *, opendal_operator_info_get_root, (const struct opendal_operator_info *self), (self), NULL)
-WRAP_RET(char *, opendal_operator_info_get_name, (const struct opendal_operator_info *self), (self), NULL)
-WRAP_RET(struct opendal_capability, opendal_operator_info_get_capability, (const struct opendal_operator_info *self), (self), ((struct opendal_capability){0}))
+OPENDAL_WRAP_VOID(opendal_operator_free, (const struct opendal_operator *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_result_operator_new, opendal_operator_new, (const char *scheme, const struct opendal_operator_options *options), (scheme, options), ((struct opendal_result_operator_new){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_new, opendal_operator_new_with_layers, (const char *scheme, const struct opendal_operator_options *options, const struct opendal_operator_layers *layers), (scheme, options, layers), ((struct opendal_result_operator_new){0}))
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_write, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes), (op, path, bytes), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_write_with, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes, const struct opendal_write_options *opts), (op, path, bytes, opts), NULL)
+OPENDAL_WRAP_RET(struct opendal_result_write, opendal_operator_write_with_metadata, (const struct opendal_operator *op, const char *path, const struct opendal_bytes *bytes, const struct opendal_write_options *opts), (op, path, bytes, opts), ((struct opendal_result_write){0}))
+OPENDAL_WRAP_RET(struct opendal_result_read, opendal_operator_read, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_read){0}))
+OPENDAL_WRAP_RET(struct opendal_result_read, opendal_operator_read_with, (const struct opendal_operator *op, const char *path, const struct opendal_read_options *opts), (op, path, opts), ((struct opendal_result_read){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_reader, opendal_operator_reader, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_operator_reader){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_reader, opendal_operator_reader_with, (const struct opendal_operator *op, const char *path, const struct opendal_reader_options *opts), (op, path, opts), ((struct opendal_result_operator_reader){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_writer, opendal_operator_writer, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_operator_writer){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_writer, opendal_operator_writer_with, (const struct opendal_operator *op, const char *path, const struct opendal_write_options *opts), (op, path, opts), ((struct opendal_result_operator_writer){0}))
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_delete, (const struct opendal_operator *op, const char *path), (op, path), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_delete_with, (const struct opendal_operator *op, const char *path, const struct opendal_delete_options *opts), (op, path, opts), NULL)
+OPENDAL_WRAP_RET(struct opendal_result_is_exist, opendal_operator_is_exist, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_is_exist){0}))
+OPENDAL_WRAP_RET(struct opendal_result_exists, opendal_operator_exists, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_exists){0}))
+OPENDAL_WRAP_RET(struct opendal_result_stat, opendal_operator_stat, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_stat){0}))
+OPENDAL_WRAP_RET(struct opendal_result_stat, opendal_operator_stat_with, (const struct opendal_operator *op, const char *path, const struct opendal_stat_options *opts), (op, path, opts), ((struct opendal_result_stat){0}))
+OPENDAL_WRAP_RET(struct opendal_result_list, opendal_operator_list, (const struct opendal_operator *op, const char *path), (op, path), ((struct opendal_result_list){0}))
+OPENDAL_WRAP_RET(struct opendal_result_list, opendal_operator_list_with, (const struct opendal_operator *op, const char *path, const struct opendal_list_options *opts), (op, path, opts), ((struct opendal_result_list){0}))
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_create_dir, (const struct opendal_operator *op, const char *path), (op, path), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_rename, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_copy, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_copy_with, (const struct opendal_operator *op, const char *src, const char *dest, const struct opendal_copy_options *opts), (op, src, dest, opts), NULL)
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_operator_check, (const struct opendal_operator *op), (op), NULL)
+OPENDAL_WRAP_RET(struct opendal_result_operator_copier, opendal_operator_copier, (const struct opendal_operator *op, const char *src, const char *dest), (op, src, dest), ((struct opendal_result_operator_copier){0}))
+OPENDAL_WRAP_RET(struct opendal_result_operator_copier, opendal_operator_copier_with, (const struct opendal_operator *op, const char *src, const char *dest, const struct opendal_copy_options *opts), (op, src, dest, opts), ((struct opendal_result_operator_copier){0}))
+OPENDAL_WRAP_RET(struct opendal_operator_info *, opendal_operator_info_new, (const struct opendal_operator *op), (op), NULL)
+OPENDAL_WRAP_VOID(opendal_operator_info_free, (struct opendal_operator_info *ptr), (ptr))
+OPENDAL_WRAP_RET(char *, opendal_operator_info_get_scheme, (const struct opendal_operator_info *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_operator_info_get_root, (const struct opendal_operator_info *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_operator_info_get_name, (const struct opendal_operator_info *self), (self), NULL)
+OPENDAL_WRAP_RET(struct opendal_capability, opendal_operator_info_get_capability, (const struct opendal_operator_info *self), (self), ((struct opendal_capability){0}))
 
 /* --- presign 与 presigned_request --- */
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_read, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_read_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_read_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_write, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_write_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_write_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_delete, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_delete_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_delete_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_stat, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
-WRAP_RET(struct opendal_result_presign, opendal_operator_presign_stat_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_stat_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
-WRAP_RET(const char *, opendal_presigned_request_method, (const struct opendal_presigned_request *req), (req), NULL)
-WRAP_RET(const char *, opendal_presigned_request_uri, (const struct opendal_presigned_request *req), (req), NULL)
-WRAP_RET(const struct opendal_http_header_pair *, opendal_presigned_request_headers, (const struct opendal_presigned_request *req), (req), NULL)
-WRAP_RET(uintptr_t, opendal_presigned_request_headers_len, (const struct opendal_presigned_request *req), (req), 0)
-WRAP_VOID(opendal_presigned_request_free, (struct opendal_presigned_request *req), (req))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_read, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_read_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_read_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_write, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_write_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_write_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_delete, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_delete_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_delete_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_stat, (const struct opendal_operator *op, const char *path, uint64_t expire_secs), (op, path, expire_secs), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(struct opendal_result_presign, opendal_operator_presign_stat_with, (const struct opendal_operator *op, const char *path, uint64_t expire_secs, const struct opendal_stat_options *opts), (op, path, expire_secs, opts), ((struct opendal_result_presign){0}))
+OPENDAL_WRAP_RET(const char *, opendal_presigned_request_method, (const struct opendal_presigned_request *req), (req), NULL)
+OPENDAL_WRAP_RET(const char *, opendal_presigned_request_uri, (const struct opendal_presigned_request *req), (req), NULL)
+OPENDAL_WRAP_RET(const struct opendal_http_header_pair *, opendal_presigned_request_headers, (const struct opendal_presigned_request *req), (req), NULL)
+OPENDAL_WRAP_RET(uintptr_t, opendal_presigned_request_headers_len, (const struct opendal_presigned_request *req), (req), 0)
+OPENDAL_WRAP_VOID(opendal_presigned_request_free, (struct opendal_presigned_request *req), (req))
 
 /* --- 通用释放 --- */
-WRAP_VOID(opendal_string_free, (char *ptr), (ptr))
-WRAP_VOID(opendal_bytes_free, (struct opendal_bytes *ptr), (ptr))
+OPENDAL_WRAP_VOID(opendal_string_free, (char *ptr), (ptr))
+OPENDAL_WRAP_VOID(opendal_bytes_free, (struct opendal_bytes *ptr), (ptr))
 
 /* --- list_options --- */
-WRAP_RET(struct opendal_list_options *, opendal_list_options_new, (void), (), NULL)
-WRAP_VOID(opendal_list_options_set_recursive, (struct opendal_list_options *opts, bool recursive), (opts, recursive))
-WRAP_VOID(opendal_list_options_set_limit, (struct opendal_list_options *opts, uintptr_t limit), (opts, limit))
-WRAP_VOID(opendal_list_options_set_start_after, (struct opendal_list_options *opts, const char *start_after), (opts, start_after))
-WRAP_VOID(opendal_list_options_set_versions, (struct opendal_list_options *opts, bool versions), (opts, versions))
-WRAP_VOID(opendal_list_options_set_deleted, (struct opendal_list_options *opts, bool deleted), (opts, deleted))
-WRAP_VOID(opendal_list_options_free, (struct opendal_list_options *opts), (opts))
+OPENDAL_WRAP_RET(struct opendal_list_options *, opendal_list_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_list_options_set_recursive, (struct opendal_list_options *opts, bool recursive), (opts, recursive))
+OPENDAL_WRAP_VOID(opendal_list_options_set_limit, (struct opendal_list_options *opts, uintptr_t limit), (opts, limit))
+OPENDAL_WRAP_VOID(opendal_list_options_set_start_after, (struct opendal_list_options *opts, const char *start_after), (opts, start_after))
+OPENDAL_WRAP_VOID(opendal_list_options_set_versions, (struct opendal_list_options *opts, bool versions), (opts, versions))
+OPENDAL_WRAP_VOID(opendal_list_options_set_deleted, (struct opendal_list_options *opts, bool deleted), (opts, deleted))
+OPENDAL_WRAP_VOID(opendal_list_options_free, (struct opendal_list_options *opts), (opts))
 
 /* --- delete_options --- */
-WRAP_RET(struct opendal_delete_options *, opendal_delete_options_new, (void), (), NULL)
-WRAP_VOID(opendal_delete_options_set_version, (struct opendal_delete_options *opts, const char *version), (opts, version))
-WRAP_VOID(opendal_delete_options_set_recursive, (struct opendal_delete_options *opts, bool recursive), (opts, recursive))
-WRAP_VOID(opendal_delete_options_free, (struct opendal_delete_options *opts), (opts))
+OPENDAL_WRAP_RET(struct opendal_delete_options *, opendal_delete_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_delete_options_set_version, (struct opendal_delete_options *opts, const char *version), (opts, version))
+OPENDAL_WRAP_VOID(opendal_delete_options_set_recursive, (struct opendal_delete_options *opts, bool recursive), (opts, recursive))
+OPENDAL_WRAP_VOID(opendal_delete_options_free, (struct opendal_delete_options *opts), (opts))
 
 /* --- write_options --- */
-WRAP_RET(struct opendal_write_options *, opendal_write_options_new, (void), (), NULL)
-WRAP_VOID(opendal_write_options_free, (struct opendal_write_options *opts), (opts))
-WRAP_VOID(opendal_write_options_set_append, (struct opendal_write_options *opts, bool append), (opts, append))
-WRAP_VOID(opendal_write_options_set_cache_control, (struct opendal_write_options *opts, const char *cache_control), (opts, cache_control))
-WRAP_VOID(opendal_write_options_set_content_type, (struct opendal_write_options *opts, const char *content_type), (opts, content_type))
-WRAP_VOID(opendal_write_options_set_content_disposition, (struct opendal_write_options *opts, const char *content_disposition), (opts, content_disposition))
-WRAP_VOID(opendal_write_options_set_content_encoding, (struct opendal_write_options *opts, const char *content_encoding), (opts, content_encoding))
-WRAP_VOID(opendal_write_options_set_if_match, (struct opendal_write_options *opts, const char *if_match), (opts, if_match))
-WRAP_VOID(opendal_write_options_set_if_none_match, (struct opendal_write_options *opts, const char *if_none_match), (opts, if_none_match))
-WRAP_VOID(opendal_write_options_set_if_not_exists, (struct opendal_write_options *opts, bool if_not_exists), (opts, if_not_exists))
-WRAP_VOID(opendal_write_options_set_concurrent, (struct opendal_write_options *opts, uintptr_t concurrent), (opts, concurrent))
-WRAP_VOID(opendal_write_options_set_chunk, (struct opendal_write_options *opts, uintptr_t chunk), (opts, chunk))
-WRAP_VOID(opendal_write_options_set_user_metadata, (struct opendal_write_options *opts, const struct opendal_write_user_metadata_pair *pairs, uintptr_t len), (opts, pairs, len))
+OPENDAL_WRAP_RET(struct opendal_write_options *, opendal_write_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_write_options_free, (struct opendal_write_options *opts), (opts))
+OPENDAL_WRAP_VOID(opendal_write_options_set_append, (struct opendal_write_options *opts, bool append), (opts, append))
+OPENDAL_WRAP_VOID(opendal_write_options_set_cache_control, (struct opendal_write_options *opts, const char *cache_control), (opts, cache_control))
+OPENDAL_WRAP_VOID(opendal_write_options_set_content_type, (struct opendal_write_options *opts, const char *content_type), (opts, content_type))
+OPENDAL_WRAP_VOID(opendal_write_options_set_content_disposition, (struct opendal_write_options *opts, const char *content_disposition), (opts, content_disposition))
+OPENDAL_WRAP_VOID(opendal_write_options_set_content_encoding, (struct opendal_write_options *opts, const char *content_encoding), (opts, content_encoding))
+OPENDAL_WRAP_VOID(opendal_write_options_set_if_match, (struct opendal_write_options *opts, const char *if_match), (opts, if_match))
+OPENDAL_WRAP_VOID(opendal_write_options_set_if_none_match, (struct opendal_write_options *opts, const char *if_none_match), (opts, if_none_match))
+OPENDAL_WRAP_VOID(opendal_write_options_set_if_not_exists, (struct opendal_write_options *opts, bool if_not_exists), (opts, if_not_exists))
+OPENDAL_WRAP_VOID(opendal_write_options_set_concurrent, (struct opendal_write_options *opts, uintptr_t concurrent), (opts, concurrent))
+OPENDAL_WRAP_VOID(opendal_write_options_set_chunk, (struct opendal_write_options *opts, uintptr_t chunk), (opts, chunk))
+OPENDAL_WRAP_VOID(opendal_write_options_set_user_metadata, (struct opendal_write_options *opts, const struct opendal_write_user_metadata_pair *pairs, uintptr_t len), (opts, pairs, len))
 
 /* --- stat_options --- */
-WRAP_RET(struct opendal_stat_options *, opendal_stat_options_new, (void), (), NULL)
-WRAP_VOID(opendal_stat_options_free, (struct opendal_stat_options *opts), (opts))
-WRAP_VOID(opendal_stat_options_set_version, (struct opendal_stat_options *opts, const char *version), (opts, version))
-WRAP_VOID(opendal_stat_options_set_if_match, (struct opendal_stat_options *opts, const char *if_match), (opts, if_match))
-WRAP_VOID(opendal_stat_options_set_if_none_match, (struct opendal_stat_options *opts, const char *if_none_match), (opts, if_none_match))
-WRAP_VOID(opendal_stat_options_set_if_modified_since, (struct opendal_stat_options *opts, int64_t if_modified_since), (opts, if_modified_since))
-WRAP_VOID(opendal_stat_options_set_if_unmodified_since, (struct opendal_stat_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
-WRAP_VOID(opendal_stat_options_set_override_content_type, (struct opendal_stat_options *opts, const char *override_content_type), (opts, override_content_type))
-WRAP_VOID(opendal_stat_options_set_override_cache_control, (struct opendal_stat_options *opts, const char *override_cache_control), (opts, override_cache_control))
-WRAP_VOID(opendal_stat_options_set_override_content_disposition, (struct opendal_stat_options *opts, const char *override_content_disposition), (opts, override_content_disposition))
+OPENDAL_WRAP_RET(struct opendal_stat_options *, opendal_stat_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_stat_options_free, (struct opendal_stat_options *opts), (opts))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_version, (struct opendal_stat_options *opts, const char *version), (opts, version))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_if_match, (struct opendal_stat_options *opts, const char *if_match), (opts, if_match))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_if_none_match, (struct opendal_stat_options *opts, const char *if_none_match), (opts, if_none_match))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_if_modified_since, (struct opendal_stat_options *opts, int64_t if_modified_since), (opts, if_modified_since))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_if_unmodified_since, (struct opendal_stat_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_override_content_type, (struct opendal_stat_options *opts, const char *override_content_type), (opts, override_content_type))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_override_cache_control, (struct opendal_stat_options *opts, const char *override_cache_control), (opts, override_cache_control))
+OPENDAL_WRAP_VOID(opendal_stat_options_set_override_content_disposition, (struct opendal_stat_options *opts, const char *override_content_disposition), (opts, override_content_disposition))
 
 /* --- read_options --- */
-WRAP_RET(struct opendal_read_options *, opendal_read_options_new, (void), (), NULL)
-WRAP_VOID(opendal_read_options_free, (struct opendal_read_options *opts), (opts))
-WRAP_VOID(opendal_read_options_set_range, (struct opendal_read_options *opts, uint64_t offset, uint64_t length), (opts, offset, length))
-WRAP_VOID(opendal_read_options_set_range_from, (struct opendal_read_options *opts, uint64_t offset), (opts, offset))
-WRAP_VOID(opendal_read_options_set_version, (struct opendal_read_options *opts, const char *version), (opts, version))
-WRAP_VOID(opendal_read_options_set_if_match, (struct opendal_read_options *opts, const char *if_match), (opts, if_match))
-WRAP_VOID(opendal_read_options_set_if_none_match, (struct opendal_read_options *opts, const char *if_none_match), (opts, if_none_match))
-WRAP_VOID(opendal_read_options_set_if_modified_since, (struct opendal_read_options *opts, int64_t if_modified_since), (opts, if_modified_since))
-WRAP_VOID(opendal_read_options_set_if_unmodified_since, (struct opendal_read_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
-WRAP_VOID(opendal_read_options_set_concurrent, (struct opendal_read_options *opts, uintptr_t concurrent), (opts, concurrent))
-WRAP_VOID(opendal_read_options_set_chunk, (struct opendal_read_options *opts, uintptr_t chunk), (opts, chunk))
-WRAP_VOID(opendal_read_options_set_gap, (struct opendal_read_options *opts, uintptr_t gap), (opts, gap))
-WRAP_VOID(opendal_read_options_set_content_length_hint, (struct opendal_read_options *opts, uint64_t content_length_hint), (opts, content_length_hint))
-WRAP_VOID(opendal_read_options_set_override_content_type, (struct opendal_read_options *opts, const char *override_content_type), (opts, override_content_type))
-WRAP_VOID(opendal_read_options_set_override_cache_control, (struct opendal_read_options *opts, const char *override_cache_control), (opts, override_cache_control))
-WRAP_VOID(opendal_read_options_set_override_content_disposition, (struct opendal_read_options *opts, const char *override_content_disposition), (opts, override_content_disposition))
+OPENDAL_WRAP_RET(struct opendal_read_options *, opendal_read_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_read_options_free, (struct opendal_read_options *opts), (opts))
+OPENDAL_WRAP_VOID(opendal_read_options_set_range, (struct opendal_read_options *opts, uint64_t offset, uint64_t length), (opts, offset, length))
+OPENDAL_WRAP_VOID(opendal_read_options_set_range_from, (struct opendal_read_options *opts, uint64_t offset), (opts, offset))
+OPENDAL_WRAP_VOID(opendal_read_options_set_version, (struct opendal_read_options *opts, const char *version), (opts, version))
+OPENDAL_WRAP_VOID(opendal_read_options_set_if_match, (struct opendal_read_options *opts, const char *if_match), (opts, if_match))
+OPENDAL_WRAP_VOID(opendal_read_options_set_if_none_match, (struct opendal_read_options *opts, const char *if_none_match), (opts, if_none_match))
+OPENDAL_WRAP_VOID(opendal_read_options_set_if_modified_since, (struct opendal_read_options *opts, int64_t if_modified_since), (opts, if_modified_since))
+OPENDAL_WRAP_VOID(opendal_read_options_set_if_unmodified_since, (struct opendal_read_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
+OPENDAL_WRAP_VOID(opendal_read_options_set_concurrent, (struct opendal_read_options *opts, uintptr_t concurrent), (opts, concurrent))
+OPENDAL_WRAP_VOID(opendal_read_options_set_chunk, (struct opendal_read_options *opts, uintptr_t chunk), (opts, chunk))
+OPENDAL_WRAP_VOID(opendal_read_options_set_gap, (struct opendal_read_options *opts, uintptr_t gap), (opts, gap))
+OPENDAL_WRAP_VOID(opendal_read_options_set_content_length_hint, (struct opendal_read_options *opts, uint64_t content_length_hint), (opts, content_length_hint))
+OPENDAL_WRAP_VOID(opendal_read_options_set_override_content_type, (struct opendal_read_options *opts, const char *override_content_type), (opts, override_content_type))
+OPENDAL_WRAP_VOID(opendal_read_options_set_override_cache_control, (struct opendal_read_options *opts, const char *override_cache_control), (opts, override_cache_control))
+OPENDAL_WRAP_VOID(opendal_read_options_set_override_content_disposition, (struct opendal_read_options *opts, const char *override_content_disposition), (opts, override_content_disposition))
 
 /* --- reader_options --- */
-WRAP_RET(struct opendal_reader_options *, opendal_reader_options_new, (void), (), NULL)
-WRAP_VOID(opendal_reader_options_free, (struct opendal_reader_options *opts), (opts))
-WRAP_VOID(opendal_reader_options_set_version, (struct opendal_reader_options *opts, const char *version), (opts, version))
-WRAP_VOID(opendal_reader_options_set_if_match, (struct opendal_reader_options *opts, const char *if_match), (opts, if_match))
-WRAP_VOID(opendal_reader_options_set_if_none_match, (struct opendal_reader_options *opts, const char *if_none_match), (opts, if_none_match))
-WRAP_VOID(opendal_reader_options_set_if_modified_since, (struct opendal_reader_options *opts, int64_t if_modified_since), (opts, if_modified_since))
-WRAP_VOID(opendal_reader_options_set_if_unmodified_since, (struct opendal_reader_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
-WRAP_VOID(opendal_reader_options_set_content_length_hint, (struct opendal_reader_options *opts, uint64_t content_length_hint), (opts, content_length_hint))
-WRAP_VOID(opendal_reader_options_set_concurrent, (struct opendal_reader_options *opts, uintptr_t concurrent), (opts, concurrent))
-WRAP_VOID(opendal_reader_options_set_chunk, (struct opendal_reader_options *opts, uintptr_t chunk), (opts, chunk))
-WRAP_VOID(opendal_reader_options_set_gap, (struct opendal_reader_options *opts, uintptr_t gap), (opts, gap))
-WRAP_VOID(opendal_reader_options_set_prefetch, (struct opendal_reader_options *opts, uintptr_t prefetch), (opts, prefetch))
+OPENDAL_WRAP_RET(struct opendal_reader_options *, opendal_reader_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_reader_options_free, (struct opendal_reader_options *opts), (opts))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_version, (struct opendal_reader_options *opts, const char *version), (opts, version))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_if_match, (struct opendal_reader_options *opts, const char *if_match), (opts, if_match))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_if_none_match, (struct opendal_reader_options *opts, const char *if_none_match), (opts, if_none_match))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_if_modified_since, (struct opendal_reader_options *opts, int64_t if_modified_since), (opts, if_modified_since))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_if_unmodified_since, (struct opendal_reader_options *opts, int64_t if_unmodified_since), (opts, if_unmodified_since))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_content_length_hint, (struct opendal_reader_options *opts, uint64_t content_length_hint), (opts, content_length_hint))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_concurrent, (struct opendal_reader_options *opts, uintptr_t concurrent), (opts, concurrent))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_chunk, (struct opendal_reader_options *opts, uintptr_t chunk), (opts, chunk))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_gap, (struct opendal_reader_options *opts, uintptr_t gap), (opts, gap))
+OPENDAL_WRAP_VOID(opendal_reader_options_set_prefetch, (struct opendal_reader_options *opts, uintptr_t prefetch), (opts, prefetch))
 
 /* --- copy_options --- */
-WRAP_RET(struct opendal_copy_options *, opendal_copy_options_new, (void), (), NULL)
-WRAP_VOID(opendal_copy_options_free, (struct opendal_copy_options *opts), (opts))
-WRAP_VOID(opendal_copy_options_set_if_not_exists, (struct opendal_copy_options *opts, bool if_not_exists), (opts, if_not_exists))
-WRAP_VOID(opendal_copy_options_set_if_match, (struct opendal_copy_options *opts, const char *if_match), (opts, if_match))
-WRAP_VOID(opendal_copy_options_set_source_version, (struct opendal_copy_options *opts, const char *source_version), (opts, source_version))
-WRAP_VOID(opendal_copy_options_set_source_content_length_hint, (struct opendal_copy_options *opts, uint64_t source_content_length_hint), (opts, source_content_length_hint))
-WRAP_VOID(opendal_copy_options_set_concurrent, (struct opendal_copy_options *opts, uintptr_t concurrent), (opts, concurrent))
-WRAP_VOID(opendal_copy_options_set_chunk, (struct opendal_copy_options *opts, uintptr_t chunk), (opts, chunk))
+OPENDAL_WRAP_RET(struct opendal_copy_options *, opendal_copy_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_copy_options_free, (struct opendal_copy_options *opts), (opts))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_if_not_exists, (struct opendal_copy_options *opts, bool if_not_exists), (opts, if_not_exists))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_if_match, (struct opendal_copy_options *opts, const char *if_match), (opts, if_match))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_source_version, (struct opendal_copy_options *opts, const char *source_version), (opts, source_version))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_source_content_length_hint, (struct opendal_copy_options *opts, uint64_t source_content_length_hint), (opts, source_content_length_hint))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_concurrent, (struct opendal_copy_options *opts, uintptr_t concurrent), (opts, concurrent))
+OPENDAL_WRAP_VOID(opendal_copy_options_set_chunk, (struct opendal_copy_options *opts, uintptr_t chunk), (opts, chunk))
 
 /* --- operator_options --- */
-WRAP_RET(struct opendal_operator_options *, opendal_operator_options_new, (void), (), NULL)
-WRAP_VOID(opendal_operator_options_set, (struct opendal_operator_options *self, const char *key, const char *value), (self, key, value))
-WRAP_VOID(opendal_operator_options_free, (struct opendal_operator_options *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_operator_options *, opendal_operator_options_new, (void), (), NULL)
+OPENDAL_WRAP_VOID(opendal_operator_options_set, (struct opendal_operator_options *self, const char *key, const char *value), (self, key, value))
+OPENDAL_WRAP_VOID(opendal_operator_options_free, (struct opendal_operator_options *ptr), (ptr))
 
 /* --- entry --- */
-WRAP_RET(char *, opendal_entry_path, (const struct opendal_entry *self), (self), NULL)
-WRAP_RET(char *, opendal_entry_name, (const struct opendal_entry *self), (self), NULL)
-WRAP_RET(struct opendal_metadata *, opendal_entry_metadata, (const struct opendal_entry *self), (self), NULL)
-WRAP_VOID(opendal_entry_free, (struct opendal_entry *ptr), (ptr))
+OPENDAL_WRAP_RET(char *, opendal_entry_path, (const struct opendal_entry *self), (self), NULL)
+OPENDAL_WRAP_RET(char *, opendal_entry_name, (const struct opendal_entry *self), (self), NULL)
+OPENDAL_WRAP_RET(struct opendal_metadata *, opendal_entry_metadata, (const struct opendal_entry *self), (self), NULL)
+OPENDAL_WRAP_VOID(opendal_entry_free, (struct opendal_entry *ptr), (ptr))
 
 /* --- reader / writer / copier --- */
-WRAP_RET(struct opendal_result_reader_read, opendal_reader_read, (struct opendal_reader *self, uint8_t *buf, uintptr_t len), (self, buf, len), ((struct opendal_result_reader_read){0}))
-WRAP_RET(struct opendal_result_reader_seek, opendal_reader_seek, (struct opendal_reader *self, int64_t offset, int32_t whence), (self, offset, whence), ((struct opendal_result_reader_seek){0}))
-WRAP_VOID(opendal_reader_free, (struct opendal_reader *ptr), (ptr))
-WRAP_RET(struct opendal_result_writer_write, opendal_writer_write, (struct opendal_writer *self, const struct opendal_bytes *bytes), (self, bytes), ((struct opendal_result_writer_write){0}))
-WRAP_RET(struct opendal_error *, opendal_writer_close, (struct opendal_writer *ptr), (ptr), NULL)
-WRAP_RET(struct opendal_result_write, opendal_writer_close_with_metadata, (struct opendal_writer *ptr), (ptr), ((struct opendal_result_write){0}))
-WRAP_VOID(opendal_writer_free, (struct opendal_writer *ptr), (ptr))
-WRAP_RET(struct opendal_result_copier_next, opendal_copier_next, (struct opendal_copier *self), (self), ((struct opendal_result_copier_next){0}))
-WRAP_RET(struct opendal_error *, opendal_copier_abort, (struct opendal_copier *self), (self), NULL)
-WRAP_VOID(opendal_copier_free, (struct opendal_copier *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_result_reader_read, opendal_reader_read, (struct opendal_reader *self, uint8_t *buf, uintptr_t len), (self, buf, len), ((struct opendal_result_reader_read){0}))
+OPENDAL_WRAP_RET(struct opendal_result_reader_seek, opendal_reader_seek, (struct opendal_reader *self, int64_t offset, int32_t whence), (self, offset, whence), ((struct opendal_result_reader_seek){0}))
+OPENDAL_WRAP_VOID(opendal_reader_free, (struct opendal_reader *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_result_writer_write, opendal_writer_write, (struct opendal_writer *self, const struct opendal_bytes *bytes), (self, bytes), ((struct opendal_result_writer_write){0}))
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_writer_close, (struct opendal_writer *ptr), (ptr), NULL)
+OPENDAL_WRAP_RET(struct opendal_result_write, opendal_writer_close_with_metadata, (struct opendal_writer *ptr), (ptr), ((struct opendal_result_write){0}))
+OPENDAL_WRAP_VOID(opendal_writer_free, (struct opendal_writer *ptr), (ptr))
+OPENDAL_WRAP_RET(struct opendal_result_copier_next, opendal_copier_next, (struct opendal_copier *self), (self), ((struct opendal_result_copier_next){0}))
+OPENDAL_WRAP_RET(struct opendal_error *, opendal_copier_abort, (struct opendal_copier *self), (self), NULL)
+OPENDAL_WRAP_VOID(opendal_copier_free, (struct opendal_copier *ptr), (ptr))

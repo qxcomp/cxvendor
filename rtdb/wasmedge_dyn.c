@@ -34,24 +34,24 @@
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE wasmedge_lib_handle_t;
+  static wasmedge_lib_handle_t wasmedge_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *wasmedge_get_sym(wasmedge_lib_handle_t h, const char *name) {
       return (void *)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void wasmedge_free_lib(wasmedge_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *wasmedge_lib_error(void) { return "LoadLibrary failed"; }
+  #define WASMEDGE_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *wasmedge_lib_handle_t;
+  static wasmedge_lib_handle_t wasmedge_load_lib(const char *path) {
       return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *wasmedge_get_sym(wasmedge_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void wasmedge_free_lib(wasmedge_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *wasmedge_lib_error(void) { return dlerror(); }
+  #define WASMEDGE_PATH_SEP ':'
 #endif
 
 /* ============================================================
@@ -124,7 +124,7 @@ typedef struct {
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t wasmedge_handle = NULL;
+static wasmedge_lib_handle_t wasmedge_handle = NULL;
 static int wasmedge_init_state = 0;
 
 /* ============================================================
@@ -165,7 +165,7 @@ static int wasmedge_do_load(const char *library_path) {
         if (copy) {
             char *p = copy;
             while (p && *p && n < 60) {
-                char *sep = strchr(p, PATH_SEP);
+                char *sep = strchr(p, WASMEDGE_PATH_SEP);
                 if (sep) *sep = 0;
                 if (*p) {
                     snprintf(bufs[n], sizeof(bufs[0]), "%s/libwasmedge.so.0", p);
@@ -206,18 +206,18 @@ static int wasmedge_do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        wasmedge_handle = load_lib(candidates[i]);
+        wasmedge_handle = wasmedge_load_lib(candidates[i]);
         if (wasmedge_handle) break;
     }
     if (!wasmedge_handle) {
-        fprintf(stderr, "wasmedge_dyn: cannot load libwasmedge (%s; WASMEDGE_DYN_LIB 可指定路径)\n", lib_error());
+        fprintf(stderr, "wasmedge_dyn: cannot load libwasmedge (%s; WASMEDGE_DYN_LIB 可指定路径)\n", wasmedge_lib_error());
         return -1;
     }
 
     /* 验证锚点符号 */
-    if (!get_sym(wasmedge_handle, "WasmEdge_VMCreate")) {
+    if (!wasmedge_get_sym(wasmedge_handle, "WasmEdge_VMCreate")) {
         fprintf(stderr, "wasmedge_dyn: loaded library does not export WasmEdge_VMCreate\n");
-        free_lib(wasmedge_handle);
+        wasmedge_free_lib(wasmedge_handle);
         wasmedge_handle = NULL;
         return -1;
     }
@@ -257,18 +257,18 @@ void wasmedge_dyn_cleanup(void) {
 
 int wasmedge_dyn_has_symbol(const char *name) {
     if (!wasmedge_libok()) return 0;
-    return get_sym(wasmedge_handle, name) != NULL;
+    return wasmedge_get_sym(wasmedge_handle, name) != NULL;
 }
 
 /* ============================================================
  * WRAP 宏：可变参数无法用宏处理（两库核心集均无可变参数导出）
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define WASMEDGE_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                         \
     if (!fn) {                                                             \
         if (!wasmedge_libok()) return fallback;                               \
-        *(void **)(&fn) = get_sym(wasmedge_handle, #name);                    \
+        *(void **)(&fn) = wasmedge_get_sym(wasmedge_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmedge_dyn: dlsym failed: %s\n", #name);       \
             return fallback;                                                \
@@ -277,12 +277,12 @@ ret name params {                                                         \
     return fn args;                                                         \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define WASMEDGE_WRAP_VOID(name, params, args)                                      \
 void name params {                                                        \
     static void (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
         if (!wasmedge_libok()) return;                                        \
-        *(void **)(&fn) = get_sym(wasmedge_handle, #name);                    \
+        *(void **)(&fn) = wasmedge_get_sym(wasmedge_handle, #name);                    \
         if (!fn) {                                                         \
             fprintf(stderr, "wasmedge_dyn: dlsym failed: %s\n", #name);       \
             return;                                                         \
@@ -297,58 +297,58 @@ void name params {                                                        \
 
 
 /* ---- VM ---- */
-WRAP_RET(WasmEdge_VMContext *, WasmEdge_VMCreate, (const WasmEdge_ConfigureContext *conf, WasmEdge_ExecutorContext *exec), (conf, exec), NULL)
-WRAP_VOID(WasmEdge_VMDelete, (WasmEdge_VMContext *vm), (vm))
-WRAP_RET(WasmEdge_Result, WasmEdge_VMLoadWasmFromBuffer, (WasmEdge_VMContext *vm, const uint8_t *buf, uint32_t buf_len), (vm, buf, buf_len), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMLoadWasmFromFile, (WasmEdge_VMContext *vm, const char *path), (vm, path), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMValidate, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMInstantiate, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMExecute, (WasmEdge_VMContext *vm, const WasmEdge_String name, const WasmEdge_Value *params, const uint32_t plen, WasmEdge_Value *returns, const uint32_t rlen), (vm, name, params, plen, returns, rlen), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMExecuteRegistered, (WasmEdge_VMContext *vm, const WasmEdge_String mod, const WasmEdge_String fname, const WasmEdge_Value *params, const uint32_t plen, WasmEdge_Value *returns, const uint32_t rlen), (vm, mod, fname, params, plen, returns, rlen), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMRegisterModuleFromBuffer, (WasmEdge_VMContext *vm, const WasmEdge_String name, const uint8_t *buf, uint32_t buf_len), (vm, name, buf, buf_len), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMRegisterModuleFromFile, (WasmEdge_VMContext *vm, const WasmEdge_String name, const char *path), (vm, name, path), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMCleanup, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_Result, WasmEdge_VMGetFunctionList, (WasmEdge_VMContext *vm, WasmEdge_String *names, WasmEdge_FunctionTypeContext **types, uint32_t *list_len), (vm, names, types, list_len), WasmEdge_Result_Fail)
-WRAP_RET(WasmEdge_FunctionTypeContext *, WasmEdge_VMGetFunctionType, (WasmEdge_VMContext *vm, const WasmEdge_String name), (vm, name), NULL)
-WRAP_RET(WasmEdge_FunctionTypeContext *, WasmEdge_VMGetFunctionTypeRegistered, (WasmEdge_VMContext *vm, const WasmEdge_String mod, const WasmEdge_String fname), (vm, mod, fname), NULL)
+WASMEDGE_WRAP_RET(WasmEdge_VMContext *, WasmEdge_VMCreate, (const WasmEdge_ConfigureContext *conf, WasmEdge_ExecutorContext *exec), (conf, exec), NULL)
+WASMEDGE_WRAP_VOID(WasmEdge_VMDelete, (WasmEdge_VMContext *vm), (vm))
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMLoadWasmFromBuffer, (WasmEdge_VMContext *vm, const uint8_t *buf, uint32_t buf_len), (vm, buf, buf_len), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMLoadWasmFromFile, (WasmEdge_VMContext *vm, const char *path), (vm, path), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMValidate, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMInstantiate, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMExecute, (WasmEdge_VMContext *vm, const WasmEdge_String name, const WasmEdge_Value *params, const uint32_t plen, WasmEdge_Value *returns, const uint32_t rlen), (vm, name, params, plen, returns, rlen), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMExecuteRegistered, (WasmEdge_VMContext *vm, const WasmEdge_String mod, const WasmEdge_String fname, const WasmEdge_Value *params, const uint32_t plen, WasmEdge_Value *returns, const uint32_t rlen), (vm, mod, fname, params, plen, returns, rlen), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMRegisterModuleFromBuffer, (WasmEdge_VMContext *vm, const WasmEdge_String name, const uint8_t *buf, uint32_t buf_len), (vm, name, buf, buf_len), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMRegisterModuleFromFile, (WasmEdge_VMContext *vm, const WasmEdge_String name, const char *path), (vm, name, path), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMCleanup, (WasmEdge_VMContext *vm), (vm), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_Result, WasmEdge_VMGetFunctionList, (WasmEdge_VMContext *vm, WasmEdge_String *names, WasmEdge_FunctionTypeContext **types, uint32_t *list_len), (vm, names, types, list_len), WasmEdge_Result_Fail)
+WASMEDGE_WRAP_RET(WasmEdge_FunctionTypeContext *, WasmEdge_VMGetFunctionType, (WasmEdge_VMContext *vm, const WasmEdge_String name), (vm, name), NULL)
+WASMEDGE_WRAP_RET(WasmEdge_FunctionTypeContext *, WasmEdge_VMGetFunctionTypeRegistered, (WasmEdge_VMContext *vm, const WasmEdge_String mod, const WasmEdge_String fname), (vm, mod, fname), NULL)
 
 /* ---- Configure ---- */
-WRAP_RET(WasmEdge_ConfigureContext *, WasmEdge_ConfigureCreate, (void), (), NULL)
-WRAP_VOID(WasmEdge_ConfigureDelete, (WasmEdge_ConfigureContext *c), (c))
-WRAP_VOID(WasmEdge_ConfigureAddProposal, (WasmEdge_ConfigureContext *c, uint8_t prop), (c, prop))
-WRAP_VOID(WasmEdge_ConfigureAddHostRegistration, (WasmEdge_ConfigureContext *c, WasmEdge_HostRegistration host), (c, host))
+WASMEDGE_WRAP_RET(WasmEdge_ConfigureContext *, WasmEdge_ConfigureCreate, (void), (), NULL)
+WASMEDGE_WRAP_VOID(WasmEdge_ConfigureDelete, (WasmEdge_ConfigureContext *c), (c))
+WASMEDGE_WRAP_VOID(WasmEdge_ConfigureAddProposal, (WasmEdge_ConfigureContext *c, uint8_t prop), (c, prop))
+WASMEDGE_WRAP_VOID(WasmEdge_ConfigureAddHostRegistration, (WasmEdge_ConfigureContext *c, WasmEdge_HostRegistration host), (c, host))
 
 /* ---- String ---- */
-WRAP_RET(WasmEdge_String, WasmEdge_StringCreateByBuffer, (const char *s, const uint32_t len), (s, len), ((WasmEdge_String){NULL, 0}))
-WRAP_RET(WasmEdge_String, WasmEdge_StringCreateByCString, (const char *s), (s), ((WasmEdge_String){NULL, 0}))
-WRAP_RET(WasmEdge_String, WasmEdge_StringWrap, (const char *s, const uint32_t len), (s, len), ((WasmEdge_String){NULL, 0}))
-WRAP_RET(bool, WasmEdge_StringIsEqual, (const WasmEdge_String a, const WasmEdge_String b), (a, b), false)
-WRAP_RET(uint32_t, WasmEdge_StringGetLength, (const WasmEdge_String s), (s), 0)
-WRAP_RET(uint32_t, WasmEdge_StringCopy, (const WasmEdge_String s, char *buf, const uint32_t len), (s, buf, len), 0)
-WRAP_VOID(WasmEdge_StringDelete, (WasmEdge_String s), (s))
+WASMEDGE_WRAP_RET(WasmEdge_String, WasmEdge_StringCreateByBuffer, (const char *s, const uint32_t len), (s, len), ((WasmEdge_String){NULL, 0}))
+WASMEDGE_WRAP_RET(WasmEdge_String, WasmEdge_StringCreateByCString, (const char *s), (s), ((WasmEdge_String){NULL, 0}))
+WASMEDGE_WRAP_RET(WasmEdge_String, WasmEdge_StringWrap, (const char *s, const uint32_t len), (s, len), ((WasmEdge_String){NULL, 0}))
+WASMEDGE_WRAP_RET(bool, WasmEdge_StringIsEqual, (const WasmEdge_String a, const WasmEdge_String b), (a, b), false)
+WASMEDGE_WRAP_RET(uint32_t, WasmEdge_StringGetLength, (const WasmEdge_String s), (s), 0)
+WASMEDGE_WRAP_RET(uint32_t, WasmEdge_StringCopy, (const WasmEdge_String s, char *buf, const uint32_t len), (s, buf, len), 0)
+WASMEDGE_WRAP_VOID(WasmEdge_StringDelete, (WasmEdge_String s), (s))
 
 /* ---- Value ---- */
-WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenI32, (const int32_t v), (v), ((WasmEdge_Value){0, {0}}))
-WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenI64, (const int64_t v), (v), ((WasmEdge_Value){0, {0}}))
-WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenF32, (const float v), (v), ((WasmEdge_Value){0, {0}}))
-WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenF64, (const double v), (v), ((WasmEdge_Value){0, {0}}))
-WRAP_RET(int32_t, WasmEdge_ValueGetI32, (const WasmEdge_Value v), (v), 0)
-WRAP_RET(int64_t, WasmEdge_ValueGetI64, (const WasmEdge_Value v), (v), 0)
-WRAP_RET(float, WasmEdge_ValueGetF32, (const WasmEdge_Value v), (v), 0.0f)
-WRAP_RET(double, WasmEdge_ValueGetF64, (const WasmEdge_Value v), (v), 0.0)
+WASMEDGE_WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenI32, (const int32_t v), (v), ((WasmEdge_Value){0, {0}}))
+WASMEDGE_WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenI64, (const int64_t v), (v), ((WasmEdge_Value){0, {0}}))
+WASMEDGE_WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenF32, (const float v), (v), ((WasmEdge_Value){0, {0}}))
+WASMEDGE_WRAP_RET(WasmEdge_Value, WasmEdge_ValueGenF64, (const double v), (v), ((WasmEdge_Value){0, {0}}))
+WASMEDGE_WRAP_RET(int32_t, WasmEdge_ValueGetI32, (const WasmEdge_Value v), (v), 0)
+WASMEDGE_WRAP_RET(int64_t, WasmEdge_ValueGetI64, (const WasmEdge_Value v), (v), 0)
+WASMEDGE_WRAP_RET(float, WasmEdge_ValueGetF32, (const WasmEdge_Value v), (v), 0.0f)
+WASMEDGE_WRAP_RET(double, WasmEdge_ValueGetF64, (const WasmEdge_Value v), (v), 0.0)
 
 /* ---- ValType ---- */
-WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenI32, (void), (), 0)
-WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenI64, (void), (), 0)
-WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenF32, (void), (), 0)
-WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenF64, (void), (), 0)
+WASMEDGE_WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenI32, (void), (), 0)
+WASMEDGE_WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenI64, (void), (), 0)
+WASMEDGE_WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenF32, (void), (), 0)
+WASMEDGE_WRAP_RET(WasmEdge_ValType, WasmEdge_ValTypeGenF64, (void), (), 0)
 
 /* ---- Log ---- */
-WRAP_VOID(WasmEdge_LogSetErrorLevel, (void), ())
-WRAP_VOID(WasmEdge_LogInitLogger, (void), ())
+WASMEDGE_WRAP_VOID(WasmEdge_LogSetErrorLevel, (void), ())
+WASMEDGE_WRAP_VOID(WasmEdge_LogInitLogger, (void), ())
 
 /* ---- Result ---- */
-WRAP_RET(const char *, WasmEdge_ResultGetMessage, (const WasmEdge_Result r), (r), "unknown")
+WASMEDGE_WRAP_RET(const char *, WasmEdge_ResultGetMessage, (const WasmEdge_Result r), (r), "unknown")
 
 /* ============================================================
  * 便捷封装：Result 便捷判断（ResultOK 在官方头是 inline，无法 dlsym）

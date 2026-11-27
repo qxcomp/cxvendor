@@ -46,20 +46,20 @@ int mxml_libok(void);
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE mxml_lib_handle_t;
+ static mxml_lib_handle_t mxml_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *mxml_get_sym(mxml_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void mxml_free_lib(mxml_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *mxml_lib_error(void) { return "LoadLibrary failed"; }
+ #define MXML_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *mxml_lib_handle_t;
+ static mxml_lib_handle_t mxml_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *mxml_get_sym(mxml_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void mxml_free_lib(mxml_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *mxml_lib_error(void) { return dlerror(); }
+ #define MXML_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -122,12 +122,12 @@ typedef void (*mxml_v3_sax_cb_t)(mxml_node_t *, mxml_sax_event_t, void *);
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t mxml_handle = NULL;
+static mxml_lib_handle_t mxml_handle = NULL;
 static int mxml_init_state = 0;
 static int mxml_abi = 0;   /* 0 未探测, 3, 4, -1 未知 */
 
 static void *mxml_sym(const char *name) {
-    return mxml_handle ? get_sym(mxml_handle, name) : NULL;
+    return mxml_handle ? mxml_get_sym(mxml_handle, name) : NULL;
 }
 
 static int mxml_detect_abi(void) {
@@ -204,7 +204,7 @@ static int mxml_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 100) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, MXML_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         const char *names[] = {
@@ -256,12 +256,12 @@ static int mxml_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        mxml_handle = load_lib(candidates[i]);
+        mxml_handle = mxml_load_lib(candidates[i]);
         if (mxml_handle) break;
     }
     if (!mxml_handle || !mxml_sym("mxmlNewXML")) {
-        fprintf(stderr, "mxml_dyn: cannot load mxml (%s)\n", lib_error());
-        if (mxml_handle) { free_lib(mxml_handle); mxml_handle = NULL; }
+        fprintf(stderr, "mxml_dyn: cannot load mxml (%s)\n", mxml_lib_error());
+        if (mxml_handle) { mxml_free_lib(mxml_handle); mxml_handle = NULL; }
         return -1;
     }
     mxml_abi = 0;
@@ -298,7 +298,7 @@ int mxml_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define MXML_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -312,7 +312,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define MXML_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -329,62 +329,62 @@ void name params {                                                         \
 /* ============================================================
  * 一、直接共用（56 个，v3/v4 ABI 兼容）
  * ============================================================ */
-WRAP_VOID(mxmlDelete, (mxml_node_t *node), (node))
-WRAP_VOID(mxmlElementClearAttr, (mxml_node_t *node, const char *name), (node, name))
-WRAP_RET(const char *, mxmlElementGetAttr, (mxml_node_t *node, const char *name), (node, name), NULL)
-WRAP_VOID(mxmlElementSetAttr, (mxml_node_t *node, const char *name, const char *value), (node, name, value))
-WRAP_RET(mxml_node_t *, mxmlFindElement, (mxml_node_t *node, mxml_node_t *top, const char *element, const char *attr, const char *value, mxml_descend_t descend), (node, top, element, attr, value, descend), NULL)
-WRAP_RET(mxml_node_t *, mxmlFindPath, (mxml_node_t *node, const char *path), (node, path), NULL)
-WRAP_RET(const char *, mxmlGetCDATA, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const char *, mxmlGetComment, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const void *, mxmlGetCustom, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const char *, mxmlGetDeclaration, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const char *, mxmlGetDirective, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const char *, mxmlGetElement, (mxml_node_t *node), (node), NULL)
-WRAP_RET(mxml_node_t *, mxmlGetFirstChild, (mxml_node_t *node), (node), NULL)
-WRAP_RET(mxml_node_t *, mxmlGetLastChild, (mxml_node_t *node), (node), NULL)
-WRAP_RET(mxml_node_t *, mxmlGetNextSibling, (mxml_node_t *node), (node), NULL)
-WRAP_RET(const char *, mxmlGetOpaque, (mxml_node_t *node), (node), NULL)
-WRAP_RET(mxml_node_t *, mxmlGetParent, (mxml_node_t *node), (node), NULL)
-WRAP_RET(mxml_node_t *, mxmlGetPrevSibling, (mxml_node_t *node), (node), NULL)
-WRAP_RET(double, mxmlGetReal, (mxml_node_t *node), (node), 0)
-WRAP_RET(void *, mxmlGetUserData, (mxml_node_t *node), (node), NULL)
-WRAP_VOID(mxmlIndexDelete, (mxml_index_t *ind), (ind))
-WRAP_RET(mxml_node_t *, mxmlIndexEnum, (mxml_index_t *ind), (ind), NULL)
-WRAP_RET(mxml_node_t *, mxmlIndexFind, (mxml_index_t *ind, const char *element, const char *value), (ind, element, value), NULL)
-WRAP_RET(mxml_index_t *, mxmlIndexNew, (mxml_node_t *node, const char *element, const char *attr), (node, element, attr), NULL)
-WRAP_RET(mxml_node_t *, mxmlIndexReset, (mxml_index_t *ind), (ind), NULL)
-WRAP_RET(mxml_node_t *, mxmlLoadFilename, (mxml_node_t *top, mxml_options_t *options, const char *filename), (top, options, filename), NULL)
-WRAP_RET(mxml_node_t *, mxmlLoadIO, (mxml_node_t *top, mxml_options_t *options, mxml_io_cb_t io_cb, void *io_cbdata), (top, options, io_cb, io_cbdata), NULL)
-WRAP_VOID(mxmlOptionsDelete, (mxml_options_t *options), (options))
-WRAP_RET(mxml_options_t *, mxmlOptionsNew, (void), (), NULL)
-WRAP_VOID(mxmlOptionsSetCustomCallbacks, (mxml_options_t *options, mxml_custload_cb_t load_cb, mxml_custsave_cb_t save_cb, void *cbdata), (options, load_cb, save_cb, cbdata))
-WRAP_VOID(mxmlOptionsSetEntityCallback, (mxml_options_t *options, mxml_entity_cb_t cb, void *cbdata), (options, cb, cbdata))
-WRAP_VOID(mxmlOptionsSetErrorCallback, (mxml_options_t *options, mxml_error_cb_t cb, void *cbdata), (options, cb, cbdata))
-WRAP_VOID(mxmlOptionsSetSAXCallback, (mxml_options_t *options, mxml_sax_cb_t cb, void *cbdata), (options, cb, cbdata))
-WRAP_VOID(mxmlOptionsSetTypeCallback, (mxml_options_t *options, mxml_type_cb_t cb, void *cbdata), (options, cb, cbdata))
-WRAP_VOID(mxmlOptionsSetTypeValue, (mxml_options_t *options, mxml_type_t type), (options, type))
-WRAP_VOID(mxmlOptionsSetWhitespaceCallback, (mxml_options_t *options, mxml_ws_cb_t cb, void *cbdata), (options, cb, cbdata))
-WRAP_VOID(mxmlOptionsSetWrapMargin, (mxml_options_t *options, int column), (options, column))
-WRAP_RET(mxml_node_t *, mxmlNewCDATA, (mxml_node_t *parent, const char *string), (parent, string), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewComment, (mxml_node_t *parent, const char *comment), (parent, comment), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewDeclaration, (mxml_node_t *parent, const char *declaration), (parent, declaration), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewDirective, (mxml_node_t *parent, const char *directive), (parent, directive), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewElement, (mxml_node_t *parent, const char *name), (parent, name), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewOpaque, (mxml_node_t *parent, const char *opaque), (parent, opaque), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewReal, (mxml_node_t *parent, double real), (parent, real), NULL)
-WRAP_RET(mxml_node_t *, mxmlNewXML, (const char *version), (version), NULL)
-WRAP_RET(int, mxmlRelease, (mxml_node_t *node), (node), 0)
-WRAP_VOID(mxmlRemove, (mxml_node_t *node), (node))
-WRAP_RET(int, mxmlRetain, (mxml_node_t *node), (node), 0)
-WRAP_RET(bool, mxmlSaveFilename, (mxml_node_t *node, mxml_options_t *options, const char *filename), (node, options, filename), false)
-WRAP_RET(bool, mxmlSaveIO, (mxml_node_t *node, mxml_options_t *options, mxml_io_cb_t io_cb, void *io_cbdata), (node, options, io_cb, io_cbdata), false)
-WRAP_RET(bool, mxmlSetComment, (mxml_node_t *node, const char *comment), (node, comment), false)
-WRAP_RET(bool, mxmlSetDeclaration, (mxml_node_t *node, const char *declaration), (node, declaration), false)
-WRAP_RET(bool, mxmlSetDirective, (mxml_node_t *node, const char *directive), (node, directive), false)
-WRAP_VOID(mxmlSetStringCallbacks, (mxml_strcopy_cb_t strcopy_cb, mxml_strfree_cb_t strfree_cb, void *str_cbdata), (strcopy_cb, strfree_cb, str_cbdata))
-WRAP_RET(mxml_node_t *, mxmlWalkNext, (mxml_node_t *node, mxml_node_t *top, mxml_descend_t descend), (node, top, descend), NULL)
-WRAP_RET(mxml_node_t *, mxmlWalkPrev, (mxml_node_t *node, mxml_node_t *top, mxml_descend_t descend), (node, top, descend), NULL)
+MXML_WRAP_VOID(mxmlDelete, (mxml_node_t *node), (node))
+MXML_WRAP_VOID(mxmlElementClearAttr, (mxml_node_t *node, const char *name), (node, name))
+MXML_WRAP_RET(const char *, mxmlElementGetAttr, (mxml_node_t *node, const char *name), (node, name), NULL)
+MXML_WRAP_VOID(mxmlElementSetAttr, (mxml_node_t *node, const char *name, const char *value), (node, name, value))
+MXML_WRAP_RET(mxml_node_t *, mxmlFindElement, (mxml_node_t *node, mxml_node_t *top, const char *element, const char *attr, const char *value, mxml_descend_t descend), (node, top, element, attr, value, descend), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlFindPath, (mxml_node_t *node, const char *path), (node, path), NULL)
+MXML_WRAP_RET(const char *, mxmlGetCDATA, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const char *, mxmlGetComment, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const void *, mxmlGetCustom, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const char *, mxmlGetDeclaration, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const char *, mxmlGetDirective, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const char *, mxmlGetElement, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlGetFirstChild, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlGetLastChild, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlGetNextSibling, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(const char *, mxmlGetOpaque, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlGetParent, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlGetPrevSibling, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_RET(double, mxmlGetReal, (mxml_node_t *node), (node), 0)
+MXML_WRAP_RET(void *, mxmlGetUserData, (mxml_node_t *node), (node), NULL)
+MXML_WRAP_VOID(mxmlIndexDelete, (mxml_index_t *ind), (ind))
+MXML_WRAP_RET(mxml_node_t *, mxmlIndexEnum, (mxml_index_t *ind), (ind), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlIndexFind, (mxml_index_t *ind, const char *element, const char *value), (ind, element, value), NULL)
+MXML_WRAP_RET(mxml_index_t *, mxmlIndexNew, (mxml_node_t *node, const char *element, const char *attr), (node, element, attr), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlIndexReset, (mxml_index_t *ind), (ind), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlLoadFilename, (mxml_node_t *top, mxml_options_t *options, const char *filename), (top, options, filename), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlLoadIO, (mxml_node_t *top, mxml_options_t *options, mxml_io_cb_t io_cb, void *io_cbdata), (top, options, io_cb, io_cbdata), NULL)
+MXML_WRAP_VOID(mxmlOptionsDelete, (mxml_options_t *options), (options))
+MXML_WRAP_RET(mxml_options_t *, mxmlOptionsNew, (void), (), NULL)
+MXML_WRAP_VOID(mxmlOptionsSetCustomCallbacks, (mxml_options_t *options, mxml_custload_cb_t load_cb, mxml_custsave_cb_t save_cb, void *cbdata), (options, load_cb, save_cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetEntityCallback, (mxml_options_t *options, mxml_entity_cb_t cb, void *cbdata), (options, cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetErrorCallback, (mxml_options_t *options, mxml_error_cb_t cb, void *cbdata), (options, cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetSAXCallback, (mxml_options_t *options, mxml_sax_cb_t cb, void *cbdata), (options, cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetTypeCallback, (mxml_options_t *options, mxml_type_cb_t cb, void *cbdata), (options, cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetTypeValue, (mxml_options_t *options, mxml_type_t type), (options, type))
+MXML_WRAP_VOID(mxmlOptionsSetWhitespaceCallback, (mxml_options_t *options, mxml_ws_cb_t cb, void *cbdata), (options, cb, cbdata))
+MXML_WRAP_VOID(mxmlOptionsSetWrapMargin, (mxml_options_t *options, int column), (options, column))
+MXML_WRAP_RET(mxml_node_t *, mxmlNewCDATA, (mxml_node_t *parent, const char *string), (parent, string), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewComment, (mxml_node_t *parent, const char *comment), (parent, comment), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewDeclaration, (mxml_node_t *parent, const char *declaration), (parent, declaration), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewDirective, (mxml_node_t *parent, const char *directive), (parent, directive), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewElement, (mxml_node_t *parent, const char *name), (parent, name), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewOpaque, (mxml_node_t *parent, const char *opaque), (parent, opaque), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewReal, (mxml_node_t *parent, double real), (parent, real), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlNewXML, (const char *version), (version), NULL)
+MXML_WRAP_RET(int, mxmlRelease, (mxml_node_t *node), (node), 0)
+MXML_WRAP_VOID(mxmlRemove, (mxml_node_t *node), (node))
+MXML_WRAP_RET(int, mxmlRetain, (mxml_node_t *node), (node), 0)
+MXML_WRAP_RET(bool, mxmlSaveFilename, (mxml_node_t *node, mxml_options_t *options, const char *filename), (node, options, filename), false)
+MXML_WRAP_RET(bool, mxmlSaveIO, (mxml_node_t *node, mxml_options_t *options, mxml_io_cb_t io_cb, void *io_cbdata), (node, options, io_cb, io_cbdata), false)
+MXML_WRAP_RET(bool, mxmlSetComment, (mxml_node_t *node, const char *comment), (node, comment), false)
+MXML_WRAP_RET(bool, mxmlSetDeclaration, (mxml_node_t *node, const char *declaration), (node, declaration), false)
+MXML_WRAP_RET(bool, mxmlSetDirective, (mxml_node_t *node, const char *directive), (node, directive), false)
+MXML_WRAP_VOID(mxmlSetStringCallbacks, (mxml_strcopy_cb_t strcopy_cb, mxml_strfree_cb_t strfree_cb, void *str_cbdata), (strcopy_cb, strfree_cb, str_cbdata))
+MXML_WRAP_RET(mxml_node_t *, mxmlWalkNext, (mxml_node_t *node, mxml_node_t *top, mxml_descend_t descend), (node, top, descend), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlWalkPrev, (mxml_node_t *node, mxml_node_t *top, mxml_descend_t descend), (node, top, descend), NULL)
 
 /* ============================================================
  * 二、签名冲突（26 个，v4 原型 + v3 运行时适配）
@@ -789,21 +789,21 @@ bool mxmlSetTextf(mxml_node_t *node, bool whitespace, const char *format, ...) {
 /* ============================================================
  * 四、v3 独有 API（16 个，v4 下符号缺失 -> 零值/no-op）
  * ============================================================ */
-WRAP_VOID(mxmlElementDeleteAttr, (mxml_node_t *node, const char *name), (node, name))
-WRAP_RET(int, mxmlEntityAddCallback, (mxml_v3_entity_cb_t cb), (cb), 0)
-WRAP_RET(const char *, mxmlEntityGetName, (int val), (val), NULL)
-WRAP_RET(int, mxmlEntityGetValue, (const char *name), (name), 0)
-WRAP_VOID(mxmlEntityRemoveCallback, (mxml_v3_entity_cb_t cb), (cb))
-WRAP_RET(mxml_node_t *, mxmlSAXLoadFd, (mxml_node_t *top, int fd, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, fd, cb, sax, sax_data), NULL)
-WRAP_RET(mxml_node_t *, mxmlSAXLoadFile, (mxml_node_t *top, FILE *fp, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, fp, cb, sax, sax_data), NULL)
-WRAP_RET(mxml_node_t *, mxmlSAXLoadString, (mxml_node_t *top, const char *s, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, s, cb, sax, sax_data), NULL)
-WRAP_VOID(mxmlSetCustomHandlers, (mxml_v3_custom_load_cb_t load, mxml_v3_custom_save_cb_t save), (load, save))
-WRAP_VOID(mxmlSetErrorCallback, (mxml_v3_error_cb_t cb), (cb))
-WRAP_VOID(mxmlSetWrapMargin, (int column), (column))
-WRAP_RET(mxml_type_t, mxml_ignore_cb, (mxml_node_t *node), (node), MXML_TYPE_IGNORE)
-WRAP_RET(mxml_type_t, mxml_integer_cb, (mxml_node_t *node), (node), MXML_TYPE_INTEGER)
-WRAP_RET(mxml_type_t, mxml_opaque_cb, (mxml_node_t *node), (node), MXML_TYPE_OPAQUE)
-WRAP_RET(mxml_type_t, mxml_real_cb, (mxml_node_t *node), (node), MXML_TYPE_REAL)
+MXML_WRAP_VOID(mxmlElementDeleteAttr, (mxml_node_t *node, const char *name), (node, name))
+MXML_WRAP_RET(int, mxmlEntityAddCallback, (mxml_v3_entity_cb_t cb), (cb), 0)
+MXML_WRAP_RET(const char *, mxmlEntityGetName, (int val), (val), NULL)
+MXML_WRAP_RET(int, mxmlEntityGetValue, (const char *name), (name), 0)
+MXML_WRAP_VOID(mxmlEntityRemoveCallback, (mxml_v3_entity_cb_t cb), (cb))
+MXML_WRAP_RET(mxml_node_t *, mxmlSAXLoadFd, (mxml_node_t *top, int fd, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, fd, cb, sax, sax_data), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlSAXLoadFile, (mxml_node_t *top, FILE *fp, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, fp, cb, sax, sax_data), NULL)
+MXML_WRAP_RET(mxml_node_t *, mxmlSAXLoadString, (mxml_node_t *top, const char *s, mxml_v3_load_cb_t cb, mxml_v3_sax_cb_t sax, void *sax_data), (top, s, cb, sax, sax_data), NULL)
+MXML_WRAP_VOID(mxmlSetCustomHandlers, (mxml_v3_custom_load_cb_t load, mxml_v3_custom_save_cb_t save), (load, save))
+MXML_WRAP_VOID(mxmlSetErrorCallback, (mxml_v3_error_cb_t cb), (cb))
+MXML_WRAP_VOID(mxmlSetWrapMargin, (int column), (column))
+MXML_WRAP_RET(mxml_type_t, mxml_ignore_cb, (mxml_node_t *node), (node), MXML_TYPE_IGNORE)
+MXML_WRAP_RET(mxml_type_t, mxml_integer_cb, (mxml_node_t *node), (node), MXML_TYPE_INTEGER)
+MXML_WRAP_RET(mxml_type_t, mxml_opaque_cb, (mxml_node_t *node), (node), MXML_TYPE_OPAQUE)
+MXML_WRAP_RET(mxml_type_t, mxml_real_cb, (mxml_node_t *node), (node), MXML_TYPE_REAL)
 
 /* mxml_error（v3 独有，变参） */
 void mxml_error(const char *format, ...) {

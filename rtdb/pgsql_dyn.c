@@ -45,65 +45,65 @@ typedef enum { PGRES_FATAL_ERROR = 7 } ExecStatusType;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE pgsql_lib_handle_t;
+  static pgsql_lib_handle_t pgsql_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *pgsql_get_sym(pgsql_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define DEFAULT_LIB_NAME "libpq.dll"
-  #define PATH_SEP ';'
+  static void pgsql_free_lib(pgsql_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *pgsql_lib_error(void) { return "LoadLibrary failed"; }
+  #define PGSQL_DEFAULT_LIB_NAME "libpq.dll"
+  #define PGSQL_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *pgsql_lib_handle_t;
+  static pgsql_lib_handle_t pgsql_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
+  static void *pgsql_get_sym(pgsql_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void pgsql_free_lib(pgsql_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *pgsql_lib_error(void) { return dlerror(); }
   #ifdef __APPLE__
-    #define DEFAULT_LIB_NAME "libpq.dylib"
+    #define PGSQL_DEFAULT_LIB_NAME "libpq.dylib"
   #else
-    #define DEFAULT_LIB_NAME "libpq.so"
+    #define PGSQL_DEFAULT_LIB_NAME "libpq.so"
   #endif
-  #define PATH_SEP ':'
+  #define PGSQL_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t pgsql_handle = NULL;
-static int init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
+static pgsql_lib_handle_t pgsql_handle = NULL;
+static int pgsql_init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define PGSQL_MAX_CANDIDATES 64
+#define PGSQL_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载：按优先级构造候选路径
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int pgsql_do_load(const char *library_path) {
     if (pgsql_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[PGSQL_MAX_CANDIDATES][PGSQL_PATH_BUF_LEN];
+    const char *candidates[PGSQL_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < PGSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], PGSQL_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("PGSQL_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < PGSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], PGSQL_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -121,11 +121,11 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < PGSQL_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, PGSQL_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
+                    snprintf(bufs[n], PGSQL_PATH_BUF_LEN, "%s/%s", p, PGSQL_DEFAULT_LIB_NAME);
                     { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
@@ -135,18 +135,18 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 直接给库名 */
-    candidates[n++] = DEFAULT_LIB_NAME;
+    candidates[n++] = PGSQL_DEFAULT_LIB_NAME;
 
     /* 5. Nix 路径 */
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
-                 home, DEFAULT_LIB_NAME);
+    if (home && *home && n < PGSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], PGSQL_PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
+                 home, PGSQL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
-                 DEFAULT_LIB_NAME);
+    if (n < PGSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], PGSQL_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
+                 PGSQL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -167,18 +167,18 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        pgsql_handle = load_lib(candidates[i]);
+        pgsql_handle = pgsql_load_lib(candidates[i]);
         if (pgsql_handle) break;
     }
     if (!pgsql_handle) {
-        fprintf(stderr, "pgsql_dyn: cannot load libpq (%s)\n", lib_error());
+        fprintf(stderr, "pgsql_dyn: cannot load libpq (%s)\n", pgsql_lib_error());
         return -1;
     }
 
     /* 验证基础符号 */
-    if (!get_sym(pgsql_handle, "PQlibVersion")) {
+    if (!pgsql_get_sym(pgsql_handle, "PQlibVersion")) {
         fprintf(stderr, "pgsql_dyn: loaded library does not export PQlibVersion\n");
-        free_lib(pgsql_handle);
+        pgsql_free_lib(pgsql_handle);
         pgsql_handle = NULL;
         return -1;
     }
@@ -190,38 +190,38 @@ static int do_load(const char *library_path) {
  * 一次性初始化：加载库
  * ============================================================ */
 int pgsql_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (pgsql_init_state == 0) {
+        pgsql_init_state = (pgsql_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && pgsql_handle != NULL) ? 1 : 0;
+    return (pgsql_init_state == 1 && pgsql_handle != NULL) ? 1 : 0;
 }
 
 int pgsql_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (pgsql_init_state == 1) return 0;
+    if (pgsql_init_state == -1) return -1;
+    if (pgsql_do_load(library_path) == 0) {
+        pgsql_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    pgsql_init_state = -1;
     return -1;
 }
 
 void pgsql_dyn_cleanup(void) {
     if (pgsql_handle) {
-        free_lib(pgsql_handle);
+        pgsql_free_lib(pgsql_handle);
         pgsql_handle = NULL;
     }
-    init_state = 0;
+    pgsql_init_state = 0;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define PGSQL_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!pgsql_libok()) return fallback;                   \
-        *(void **)(&(var)) = get_sym(pgsql_handle, name);      \
+        *(void **)(&(var)) = pgsql_get_sym(pgsql_handle, name);      \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -236,7 +236,7 @@ PGconn *PQconnectdb(const char *conninfo) {
     static PGconn *(*fn)(const char*) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQconnectdb");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQconnectdb");
         if (!fn) return NULL;
     }
     return fn(conninfo);
@@ -244,7 +244,7 @@ PGconn *PQconnectdb(const char *conninfo) {
 
 ConnStatusType PQstatus(const PGconn *conn) {
     static ConnStatusType (*fn)(const PGconn*) = NULL;
-    RESOLVE(fn, "PQstatus", CONNECTION_BAD);
+    PGSQL_RESOLVE(fn, "PQstatus", CONNECTION_BAD);
     return fn(conn);
 }
 
@@ -252,7 +252,7 @@ void PQfinish(PGconn *conn) {
     static void (*fn)(PGconn*) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQfinish");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQfinish");
         if (!fn) return;
     }
     fn(conn);
@@ -262,7 +262,7 @@ char *PQerrorMessage(const PGconn *conn) {
     static char *(*fn)(const PGconn*) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return "pgsql not initialized";
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQerrorMessage");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQerrorMessage");
         if (!fn) return "PQerrorMessage not resolved";
     }
     return fn(conn);
@@ -272,7 +272,7 @@ PGresult *PQexec(PGconn *conn, const char *query) {
     static PGresult *(*fn)(PGconn*, const char*) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQexec");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQexec");
         if (!fn) return NULL;
     }
     return fn(conn, query);
@@ -280,7 +280,7 @@ PGresult *PQexec(PGconn *conn, const char *query) {
 
 ExecStatusType PQresultStatus(const PGresult *res) {
     static ExecStatusType (*fn)(const PGresult*) = NULL;
-    RESOLVE(fn, "PQresultStatus", PGRES_FATAL_ERROR);
+    PGSQL_RESOLVE(fn, "PQresultStatus", PGRES_FATAL_ERROR);
     return fn(res);
 }
 
@@ -288,7 +288,7 @@ void PQclear(PGresult *res) {
     static void (*fn)(PGresult*) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQclear");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQclear");
         if (!fn) return;
     }
     fn(res);
@@ -296,13 +296,13 @@ void PQclear(PGresult *res) {
 
 int PQntuples(const PGresult *res) {
     static int (*fn)(const PGresult*) = NULL;
-    RESOLVE(fn, "PQntuples", 0);
+    PGSQL_RESOLVE(fn, "PQntuples", 0);
     return fn(res);
 }
 
 int PQnfields(const PGresult *res) {
     static int (*fn)(const PGresult*) = NULL;
-    RESOLVE(fn, "PQnfields", 0);
+    PGSQL_RESOLVE(fn, "PQnfields", 0);
     return fn(res);
 }
 
@@ -310,7 +310,7 @@ char *PQgetvalue(const PGresult *res, int tup_num, int field_num) {
     static char *(*fn)(const PGresult*, int, int) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQgetvalue");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQgetvalue");
         if (!fn) return NULL;
     }
     return fn(res, tup_num, field_num);
@@ -320,7 +320,7 @@ char *PQfname(const PGresult *res, int field_num) {
     static char *(*fn)(const PGresult*, int) = NULL;
     if (!fn) {
         if (!pgsql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(pgsql_handle, "PQfname");
+        *(void **)(&fn) = pgsql_get_sym(pgsql_handle, "PQfname");
         if (!fn) return NULL;
     }
     return fn(res, field_num);
@@ -328,6 +328,6 @@ char *PQfname(const PGresult *res, int field_num) {
 
 int PQlibVersion(void) {
     static int (*fn)(void) = NULL;
-    RESOLVE(fn, "PQlibVersion", 0);
+    PGSQL_RESOLVE(fn, "PQlibVersion", 0);
     return fn();
 }

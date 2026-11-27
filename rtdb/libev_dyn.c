@@ -49,24 +49,24 @@
  * ============================================================ */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) {
+ typedef HMODULE libev_lib_handle_t;
+ static libev_lib_handle_t libev_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *libev_get_sym(libev_lib_handle_t h, const char *name) {
      return (void *)GetProcAddress(h, name);
  }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ static void libev_free_lib(libev_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *libev_lib_error(void) { return "LoadLibrary failed"; }
+ #define LIBEV_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) {
+ typedef void *libev_lib_handle_t;
+ static libev_lib_handle_t libev_load_lib(const char *path) {
      return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ static void *libev_get_sym(libev_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void libev_free_lib(libev_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *libev_lib_error(void) { return dlerror(); }
+ #define LIBEV_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -118,9 +118,9 @@ typedef void (*ev_loop_callback)(struct ev_loop *loop);
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t libev_handle = NULL;
+static libev_lib_handle_t libev_handle = NULL;
 static void *libev_sym(const char *name) {
-    return libev_handle ? get_sym(libev_handle, name) : NULL;
+    return libev_handle ? libev_get_sym(libev_handle, name) : NULL;
 }
 static int libev_init_state = 0;
 
@@ -153,7 +153,7 @@ static int libev_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, LIBEV_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/libev.so.4", q);
@@ -196,12 +196,12 @@ static int libev_do_load(const char *library_path) {
     candidates[n++] = "/usr/lib/libev.so";
 #endif
     for (i = 0; i < n; i++) {
-        libev_handle = load_lib(candidates[i]);
+        libev_handle = libev_load_lib(candidates[i]);
         if (libev_handle) break;
     }
     if (!libev_handle || !libev_sym("ev_loop_new")) {
-        fprintf(stderr, "libev_dyn: cannot load libev (%s)\n", lib_error());
-        if (libev_handle) { free_lib(libev_handle); libev_handle = NULL; }
+        fprintf(stderr, "libev_dyn: cannot load libev (%s)\n", libev_lib_error());
+        if (libev_handle) { libev_free_lib(libev_handle); libev_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "libev_dyn: loaded %d %s (4.33 headers)\n", i, candidates[i]);
@@ -237,7 +237,7 @@ int libev_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏（首次调用 dlsym 并缓存；失败打印 stderr 返回安全值）
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define LIBEV_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                         \
     static ret (*fn) params = NULL;                                       \
     if (!fn) {                                                            \
@@ -251,7 +251,7 @@ ret name params {                                                         \
     return fn args;                                                       \
 }
 
-#define WRAP_VOID(name, params, args)                                     \
+#define LIBEV_WRAP_VOID(name, params, args)                                     \
 void name params {                                                        \
     static void (*fn) params = NULL;                                      \
     if (!fn) {                                                            \
@@ -268,75 +268,75 @@ void name params {                                                        \
 /* ============================================================
  * 导出函数封装（与 nm -D 导出一一对应，共 72 个）
  * ============================================================ */
-WRAP_VOID(ev_async_send, (struct ev_loop * a0, ev_async * a1), (a0, a1))
-WRAP_VOID(ev_async_start, (struct ev_loop * a0, ev_async * a1), (a0, a1))
-WRAP_VOID(ev_async_stop, (struct ev_loop * a0, ev_async * a1), (a0, a1))
-WRAP_RET(unsigned int, ev_backend, (struct ev_loop * a0), (a0), ((unsigned int){0}))
-WRAP_VOID(ev_break, (struct ev_loop * a0, int a1), (a0, a1))
-WRAP_VOID(ev_check_start, (struct ev_loop * a0, ev_check * a1), (a0, a1))
-WRAP_VOID(ev_check_stop, (struct ev_loop * a0, ev_check * a1), (a0, a1))
-WRAP_VOID(ev_child_start, (struct ev_loop * a0, ev_child * a1), (a0, a1))
-WRAP_VOID(ev_child_stop, (struct ev_loop * a0, ev_child * a1), (a0, a1))
-WRAP_VOID(ev_cleanup_start, (struct ev_loop * a0, ev_cleanup * a1), (a0, a1))
-WRAP_VOID(ev_cleanup_stop, (struct ev_loop * a0, ev_cleanup * a1), (a0, a1))
-WRAP_RET(int, ev_clear_pending, (struct ev_loop * a0, void * a1), (a0, a1), -1)
-WRAP_RET(struct ev_loop *, ev_default_loop, (unsigned int a0), (a0), NULL)
-WRAP_RET(unsigned int, ev_depth, (struct ev_loop * a0), (a0), ((unsigned int){0}))
-WRAP_VOID(ev_embed_start, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
-WRAP_VOID(ev_embed_stop, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
-WRAP_VOID(ev_embed_sweep, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
-WRAP_RET(unsigned int, ev_embeddable_backends, (void), (), ((unsigned int){0}))
-WRAP_VOID(ev_feed_event, (struct ev_loop * a0, void * a1, int a2), (a0, a1, a2))
-WRAP_VOID(ev_feed_fd_event, (struct ev_loop * a0, int a1, int a2), (a0, a1, a2))
-WRAP_VOID(ev_feed_signal, (int a0), (a0))
-WRAP_VOID(ev_feed_signal_event, (struct ev_loop * a0, int a1), (a0, a1))
-WRAP_VOID(ev_fork_start, (struct ev_loop * a0, ev_fork * a1), (a0, a1))
-WRAP_VOID(ev_fork_stop, (struct ev_loop * a0, ev_fork * a1), (a0, a1))
-WRAP_VOID(ev_idle_start, (struct ev_loop * a0, ev_idle * a1), (a0, a1))
-WRAP_VOID(ev_idle_stop, (struct ev_loop * a0, ev_idle * a1), (a0, a1))
-WRAP_VOID(ev_invoke, (struct ev_loop * a0, void * a1, int a2), (a0, a1, a2))
-WRAP_VOID(ev_invoke_pending, (struct ev_loop * a0), (a0))
-WRAP_VOID(ev_io_start, (struct ev_loop * a0, ev_io * a1), (a0, a1))
-WRAP_VOID(ev_io_stop, (struct ev_loop * a0, ev_io * a1), (a0, a1))
-WRAP_RET(unsigned int, ev_iteration, (struct ev_loop * a0), (a0), ((unsigned int){0}))
-WRAP_VOID(ev_loop_destroy, (struct ev_loop * a0), (a0))
-WRAP_VOID(ev_loop_fork, (struct ev_loop * a0), (a0))
-WRAP_RET(struct ev_loop *, ev_loop_new, (unsigned int a0), (a0), NULL)
-WRAP_RET(ev_tstamp, ev_now, (struct ev_loop * a0), (a0), ((ev_tstamp){0}))
-WRAP_VOID(ev_now_update, (struct ev_loop * a0), (a0))
-WRAP_VOID(ev_once, (struct ev_loop * a0, int a1, int a2, ev_tstamp a3, void (*a4) (int, void *), void * a5), (a0, a1, a2, a3, a4, a5))
-WRAP_RET(unsigned int, ev_pending_count, (struct ev_loop * a0), (a0), ((unsigned int){0}))
-WRAP_VOID(ev_periodic_again, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
-WRAP_VOID(ev_periodic_start, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
-WRAP_VOID(ev_periodic_stop, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
-WRAP_VOID(ev_prepare_start, (struct ev_loop * a0, ev_prepare * a1), (a0, a1))
-WRAP_VOID(ev_prepare_stop, (struct ev_loop * a0, ev_prepare * a1), (a0, a1))
-WRAP_RET(unsigned int, ev_recommended_backends, (void), (), ((unsigned int){0}))
-WRAP_VOID(ev_ref, (struct ev_loop * a0), (a0))
-WRAP_VOID(ev_resume, (struct ev_loop * a0), (a0))
-WRAP_RET(int, ev_run, (struct ev_loop * a0, int a1), (a0, a1), -1)
-WRAP_VOID(ev_set_allocator, (void *(*a0) (void *, long int)), (a0))
-WRAP_VOID(ev_set_invoke_pending_cb, (struct ev_loop * a0, ev_loop_callback a1), (a0, a1))
-WRAP_VOID(ev_set_io_collect_interval, (struct ev_loop * a0, ev_tstamp a1), (a0, a1))
-WRAP_VOID(ev_set_loop_release_cb, (struct ev_loop * a0, void (*a1) (struct ev_loop *), void (*a2) (struct ev_loop *)), (a0, a1, a2))
-WRAP_VOID(ev_set_syserr_cb, (void (*a0) (const char *)), (a0))
-WRAP_VOID(ev_set_timeout_collect_interval, (struct ev_loop * a0, ev_tstamp a1), (a0, a1))
-WRAP_VOID(ev_set_userdata, (struct ev_loop * a0, void * a1), (a0, a1))
-WRAP_VOID(ev_signal_start, (struct ev_loop * a0, ev_signal * a1), (a0, a1))
-WRAP_VOID(ev_signal_stop, (struct ev_loop * a0, ev_signal * a1), (a0, a1))
-WRAP_VOID(ev_sleep, (ev_tstamp a0), (a0))
-WRAP_VOID(ev_stat_start, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
-WRAP_VOID(ev_stat_stat, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
-WRAP_VOID(ev_stat_stop, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
-WRAP_RET(unsigned int, ev_supported_backends, (void), (), ((unsigned int){0}))
-WRAP_VOID(ev_suspend, (struct ev_loop * a0), (a0))
-WRAP_RET(ev_tstamp, ev_time, (void), (), ((ev_tstamp){0}))
-WRAP_VOID(ev_timer_again, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
-WRAP_RET(ev_tstamp, ev_timer_remaining, (struct ev_loop * a0, ev_timer * a1), (a0, a1), ((ev_tstamp){0}))
-WRAP_VOID(ev_timer_start, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
-WRAP_VOID(ev_timer_stop, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
-WRAP_VOID(ev_unref, (struct ev_loop * a0), (a0))
-WRAP_RET(void *, ev_userdata, (struct ev_loop * a0), (a0), NULL)
-WRAP_VOID(ev_verify, (struct ev_loop * a0), (a0))
-WRAP_RET(int, ev_version_major, (void), (), -1)
-WRAP_RET(int, ev_version_minor, (void), (), -1)
+LIBEV_WRAP_VOID(ev_async_send, (struct ev_loop * a0, ev_async * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_async_start, (struct ev_loop * a0, ev_async * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_async_stop, (struct ev_loop * a0, ev_async * a1), (a0, a1))
+LIBEV_WRAP_RET(unsigned int, ev_backend, (struct ev_loop * a0), (a0), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_break, (struct ev_loop * a0, int a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_check_start, (struct ev_loop * a0, ev_check * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_check_stop, (struct ev_loop * a0, ev_check * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_child_start, (struct ev_loop * a0, ev_child * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_child_stop, (struct ev_loop * a0, ev_child * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_cleanup_start, (struct ev_loop * a0, ev_cleanup * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_cleanup_stop, (struct ev_loop * a0, ev_cleanup * a1), (a0, a1))
+LIBEV_WRAP_RET(int, ev_clear_pending, (struct ev_loop * a0, void * a1), (a0, a1), -1)
+LIBEV_WRAP_RET(struct ev_loop *, ev_default_loop, (unsigned int a0), (a0), NULL)
+LIBEV_WRAP_RET(unsigned int, ev_depth, (struct ev_loop * a0), (a0), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_embed_start, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_embed_stop, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_embed_sweep, (struct ev_loop * a0, ev_embed * a1), (a0, a1))
+LIBEV_WRAP_RET(unsigned int, ev_embeddable_backends, (void), (), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_feed_event, (struct ev_loop * a0, void * a1, int a2), (a0, a1, a2))
+LIBEV_WRAP_VOID(ev_feed_fd_event, (struct ev_loop * a0, int a1, int a2), (a0, a1, a2))
+LIBEV_WRAP_VOID(ev_feed_signal, (int a0), (a0))
+LIBEV_WRAP_VOID(ev_feed_signal_event, (struct ev_loop * a0, int a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_fork_start, (struct ev_loop * a0, ev_fork * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_fork_stop, (struct ev_loop * a0, ev_fork * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_idle_start, (struct ev_loop * a0, ev_idle * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_idle_stop, (struct ev_loop * a0, ev_idle * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_invoke, (struct ev_loop * a0, void * a1, int a2), (a0, a1, a2))
+LIBEV_WRAP_VOID(ev_invoke_pending, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_VOID(ev_io_start, (struct ev_loop * a0, ev_io * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_io_stop, (struct ev_loop * a0, ev_io * a1), (a0, a1))
+LIBEV_WRAP_RET(unsigned int, ev_iteration, (struct ev_loop * a0), (a0), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_loop_destroy, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_VOID(ev_loop_fork, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_RET(struct ev_loop *, ev_loop_new, (unsigned int a0), (a0), NULL)
+LIBEV_WRAP_RET(ev_tstamp, ev_now, (struct ev_loop * a0), (a0), ((ev_tstamp){0}))
+LIBEV_WRAP_VOID(ev_now_update, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_VOID(ev_once, (struct ev_loop * a0, int a1, int a2, ev_tstamp a3, void (*a4) (int, void *), void * a5), (a0, a1, a2, a3, a4, a5))
+LIBEV_WRAP_RET(unsigned int, ev_pending_count, (struct ev_loop * a0), (a0), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_periodic_again, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_periodic_start, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_periodic_stop, (struct ev_loop * a0, ev_periodic * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_prepare_start, (struct ev_loop * a0, ev_prepare * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_prepare_stop, (struct ev_loop * a0, ev_prepare * a1), (a0, a1))
+LIBEV_WRAP_RET(unsigned int, ev_recommended_backends, (void), (), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_ref, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_VOID(ev_resume, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_RET(int, ev_run, (struct ev_loop * a0, int a1), (a0, a1), -1)
+LIBEV_WRAP_VOID(ev_set_allocator, (void *(*a0) (void *, long int)), (a0))
+LIBEV_WRAP_VOID(ev_set_invoke_pending_cb, (struct ev_loop * a0, ev_loop_callback a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_set_io_collect_interval, (struct ev_loop * a0, ev_tstamp a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_set_loop_release_cb, (struct ev_loop * a0, void (*a1) (struct ev_loop *), void (*a2) (struct ev_loop *)), (a0, a1, a2))
+LIBEV_WRAP_VOID(ev_set_syserr_cb, (void (*a0) (const char *)), (a0))
+LIBEV_WRAP_VOID(ev_set_timeout_collect_interval, (struct ev_loop * a0, ev_tstamp a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_set_userdata, (struct ev_loop * a0, void * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_signal_start, (struct ev_loop * a0, ev_signal * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_signal_stop, (struct ev_loop * a0, ev_signal * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_sleep, (ev_tstamp a0), (a0))
+LIBEV_WRAP_VOID(ev_stat_start, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_stat_stat, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_stat_stop, (struct ev_loop * a0, ev_stat * a1), (a0, a1))
+LIBEV_WRAP_RET(unsigned int, ev_supported_backends, (void), (), ((unsigned int){0}))
+LIBEV_WRAP_VOID(ev_suspend, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_RET(ev_tstamp, ev_time, (void), (), ((ev_tstamp){0}))
+LIBEV_WRAP_VOID(ev_timer_again, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
+LIBEV_WRAP_RET(ev_tstamp, ev_timer_remaining, (struct ev_loop * a0, ev_timer * a1), (a0, a1), ((ev_tstamp){0}))
+LIBEV_WRAP_VOID(ev_timer_start, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_timer_stop, (struct ev_loop * a0, ev_timer * a1), (a0, a1))
+LIBEV_WRAP_VOID(ev_unref, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_RET(void *, ev_userdata, (struct ev_loop * a0), (a0), NULL)
+LIBEV_WRAP_VOID(ev_verify, (struct ev_loop * a0), (a0))
+LIBEV_WRAP_RET(int, ev_version_major, (void), (), -1)
+LIBEV_WRAP_RET(int, ev_version_minor, (void), (), -1)

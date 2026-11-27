@@ -31,20 +31,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE cmark_lib_handle_t;
+ static cmark_lib_handle_t cmark_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *cmark_get_sym(cmark_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void cmark_free_lib(cmark_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *cmark_lib_error(void) { return "LoadLibrary failed"; }
+ #define CMARK_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *cmark_lib_handle_t;
+ static cmark_lib_handle_t cmark_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *cmark_get_sym(cmark_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void cmark_free_lib(cmark_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *cmark_lib_error(void) { return dlerror(); }
+ #define CMARK_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -140,11 +140,11 @@ typedef enum {
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t cmark_handle = NULL;
+static cmark_lib_handle_t cmark_handle = NULL;
 static int cmark_init_state = 0;
 
 static void *cmark_sym(const char *name) {
-    return cmark_handle ? get_sym(cmark_handle, name) : NULL;
+    return cmark_handle ? cmark_get_sym(cmark_handle, name) : NULL;
 }
 
 static int cmark_do_load(const char *library_path) {
@@ -180,7 +180,7 @@ static int cmark_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, CMARK_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -221,13 +221,13 @@ static int cmark_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        cmark_handle = load_lib(candidates[i]);
+        cmark_handle = cmark_load_lib(candidates[i]);
         if (cmark_handle && cmark_sym("cmark_version")) break;
-        if (cmark_handle) { free_lib(cmark_handle); cmark_handle = NULL; }
+        if (cmark_handle) { cmark_free_lib(cmark_handle); cmark_handle = NULL; }
     }
     if (!cmark_handle || !cmark_sym("cmark_markdown_to_html")) {
-        fprintf(stderr, "cmark_dyn: cannot load cmark (%s)\n", lib_error());
-        if (cmark_handle) { free_lib(cmark_handle); cmark_handle = NULL; }
+        fprintf(stderr, "cmark_dyn: cannot load cmark (%s)\n", cmark_lib_error());
+        if (cmark_handle) { cmark_free_lib(cmark_handle); cmark_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "cmark_dyn: loaded %d %s\n", i, candidates[i]);
@@ -262,7 +262,7 @@ int cmark_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define CMARK_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -276,7 +276,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define CMARK_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -295,95 +295,95 @@ void name params {                                                         \
  * ============================================================ */
 
 /* --- simple interface --- */
-WRAP_RET(char *, cmark_markdown_to_html, (const char *text, size_t len, int options), (text, len, options), NULL)
+CMARK_WRAP_RET(char *, cmark_markdown_to_html, (const char *text, size_t len, int options), (text, len, options), NULL)
 
 /* --- allocator --- */
-WRAP_RET(cmark_mem *, cmark_get_default_mem_allocator, (void), (), NULL)
+CMARK_WRAP_RET(cmark_mem *, cmark_get_default_mem_allocator, (void), (), NULL)
 
 /* --- 节点分类 --- */
-WRAP_RET(bool, cmark_node_is_block, (cmark_node *node), (node), false)
-WRAP_RET(bool, cmark_node_is_inline, (cmark_node *node), (node), false)
-WRAP_RET(bool, cmark_node_is_leaf, (cmark_node *node), (node), false)
+CMARK_WRAP_RET(bool, cmark_node_is_block, (cmark_node *node), (node), false)
+CMARK_WRAP_RET(bool, cmark_node_is_inline, (cmark_node *node), (node), false)
+CMARK_WRAP_RET(bool, cmark_node_is_leaf, (cmark_node *node), (node), false)
 
 /* --- 创建与销毁 --- */
-WRAP_RET(cmark_node *, cmark_node_new, (cmark_node_type type), (type), NULL)
-WRAP_RET(cmark_node *, cmark_node_new_with_mem, (cmark_node_type type, cmark_mem *mem), (type, mem), NULL)
-WRAP_VOID(cmark_node_free, (cmark_node *node), (node))
+CMARK_WRAP_RET(cmark_node *, cmark_node_new, (cmark_node_type type), (type), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_new_with_mem, (cmark_node_type type, cmark_mem *mem), (type, mem), NULL)
+CMARK_WRAP_VOID(cmark_node_free, (cmark_node *node), (node))
 
 /* --- 树遍历 --- */
-WRAP_RET(cmark_node *, cmark_node_next, (cmark_node *node), (node), NULL)
-WRAP_RET(cmark_node *, cmark_node_previous, (cmark_node *node), (node), NULL)
-WRAP_RET(cmark_node *, cmark_node_parent, (cmark_node *node), (node), NULL)
-WRAP_RET(cmark_node *, cmark_node_first_child, (cmark_node *node), (node), NULL)
-WRAP_RET(cmark_node *, cmark_node_last_child, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_next, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_previous, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_parent, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_first_child, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_node_last_child, (cmark_node *node), (node), NULL)
 
 /* --- 迭代器 --- */
-WRAP_RET(cmark_iter *, cmark_iter_new, (cmark_node *root), (root), NULL)
-WRAP_VOID(cmark_iter_free, (cmark_iter *iter), (iter))
-WRAP_RET(cmark_event_type, cmark_iter_next, (cmark_iter *iter), (iter), CMARK_EVENT_DONE)
-WRAP_RET(cmark_node *, cmark_iter_get_node, (cmark_iter *iter), (iter), NULL)
-WRAP_RET(cmark_event_type, cmark_iter_get_event_type, (cmark_iter *iter), (iter), CMARK_EVENT_NONE)
-WRAP_RET(cmark_node *, cmark_iter_get_root, (cmark_iter *iter), (iter), NULL)
-WRAP_VOID(cmark_iter_reset, (cmark_iter *iter, cmark_node *current, cmark_event_type event_type), (iter, current, event_type))
+CMARK_WRAP_RET(cmark_iter *, cmark_iter_new, (cmark_node *root), (root), NULL)
+CMARK_WRAP_VOID(cmark_iter_free, (cmark_iter *iter), (iter))
+CMARK_WRAP_RET(cmark_event_type, cmark_iter_next, (cmark_iter *iter), (iter), CMARK_EVENT_DONE)
+CMARK_WRAP_RET(cmark_node *, cmark_iter_get_node, (cmark_iter *iter), (iter), NULL)
+CMARK_WRAP_RET(cmark_event_type, cmark_iter_get_event_type, (cmark_iter *iter), (iter), CMARK_EVENT_NONE)
+CMARK_WRAP_RET(cmark_node *, cmark_iter_get_root, (cmark_iter *iter), (iter), NULL)
+CMARK_WRAP_VOID(cmark_iter_reset, (cmark_iter *iter, cmark_node *current, cmark_event_type event_type), (iter, current, event_type))
 
 /* --- 属性访问 --- */
-WRAP_RET(void *, cmark_node_get_user_data, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_user_data, (cmark_node *node, void *user_data), (node, user_data), 0)
-WRAP_RET(cmark_node_type, cmark_node_get_type, (cmark_node *node), (node), CMARK_NODE_NONE)
-WRAP_RET(const char *, cmark_node_get_type_string, (cmark_node *node), (node), NULL)
-WRAP_RET(const char *, cmark_node_get_literal, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_literal, (cmark_node *node, const char *content), (node, content), 0)
-WRAP_RET(int, cmark_node_get_heading_level, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_set_heading_level, (cmark_node *node, int level), (node, level), 0)
-WRAP_RET(cmark_list_type, cmark_node_get_list_type, (cmark_node *node), (node), CMARK_NO_LIST)
-WRAP_RET(int, cmark_node_set_list_type, (cmark_node *node, cmark_list_type type), (node, type), 0)
-WRAP_RET(cmark_delim_type, cmark_node_get_list_delim, (cmark_node *node), (node), CMARK_NO_DELIM)
-WRAP_RET(int, cmark_node_set_list_delim, (cmark_node *node, cmark_delim_type delim), (node, delim), 0)
-WRAP_RET(int, cmark_node_get_list_start, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_set_list_start, (cmark_node *node, int start), (node, start), 0)
-WRAP_RET(int, cmark_node_get_list_tight, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_set_list_tight, (cmark_node *node, int tight), (node, tight), 0)
-WRAP_RET(const char *, cmark_node_get_fence_info, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_fence_info, (cmark_node *node, const char *info), (node, info), 0)
-WRAP_RET(const char *, cmark_node_get_url, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_url, (cmark_node *node, const char *url), (node, url), 0)
-WRAP_RET(const char *, cmark_node_get_title, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_title, (cmark_node *node, const char *title), (node, title), 0)
-WRAP_RET(const char *, cmark_node_get_on_enter, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_on_enter, (cmark_node *node, const char *on_enter), (node, on_enter), 0)
-WRAP_RET(const char *, cmark_node_get_on_exit, (cmark_node *node), (node), NULL)
-WRAP_RET(int, cmark_node_set_on_exit, (cmark_node *node, const char *on_exit), (node, on_exit), 0)
-WRAP_RET(int, cmark_node_get_start_line, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_get_start_column, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_get_end_line, (cmark_node *node), (node), 0)
-WRAP_RET(int, cmark_node_get_end_column, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(void *, cmark_node_get_user_data, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_user_data, (cmark_node *node, void *user_data), (node, user_data), 0)
+CMARK_WRAP_RET(cmark_node_type, cmark_node_get_type, (cmark_node *node), (node), CMARK_NODE_NONE)
+CMARK_WRAP_RET(const char *, cmark_node_get_type_string, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(const char *, cmark_node_get_literal, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_literal, (cmark_node *node, const char *content), (node, content), 0)
+CMARK_WRAP_RET(int, cmark_node_get_heading_level, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_set_heading_level, (cmark_node *node, int level), (node, level), 0)
+CMARK_WRAP_RET(cmark_list_type, cmark_node_get_list_type, (cmark_node *node), (node), CMARK_NO_LIST)
+CMARK_WRAP_RET(int, cmark_node_set_list_type, (cmark_node *node, cmark_list_type type), (node, type), 0)
+CMARK_WRAP_RET(cmark_delim_type, cmark_node_get_list_delim, (cmark_node *node), (node), CMARK_NO_DELIM)
+CMARK_WRAP_RET(int, cmark_node_set_list_delim, (cmark_node *node, cmark_delim_type delim), (node, delim), 0)
+CMARK_WRAP_RET(int, cmark_node_get_list_start, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_set_list_start, (cmark_node *node, int start), (node, start), 0)
+CMARK_WRAP_RET(int, cmark_node_get_list_tight, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_set_list_tight, (cmark_node *node, int tight), (node, tight), 0)
+CMARK_WRAP_RET(const char *, cmark_node_get_fence_info, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_fence_info, (cmark_node *node, const char *info), (node, info), 0)
+CMARK_WRAP_RET(const char *, cmark_node_get_url, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_url, (cmark_node *node, const char *url), (node, url), 0)
+CMARK_WRAP_RET(const char *, cmark_node_get_title, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_title, (cmark_node *node, const char *title), (node, title), 0)
+CMARK_WRAP_RET(const char *, cmark_node_get_on_enter, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_on_enter, (cmark_node *node, const char *on_enter), (node, on_enter), 0)
+CMARK_WRAP_RET(const char *, cmark_node_get_on_exit, (cmark_node *node), (node), NULL)
+CMARK_WRAP_RET(int, cmark_node_set_on_exit, (cmark_node *node, const char *on_exit), (node, on_exit), 0)
+CMARK_WRAP_RET(int, cmark_node_get_start_line, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_get_start_column, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_get_end_line, (cmark_node *node), (node), 0)
+CMARK_WRAP_RET(int, cmark_node_get_end_column, (cmark_node *node), (node), 0)
 
 /* --- 树操作 --- */
-WRAP_VOID(cmark_node_unlink, (cmark_node *node), (node))
-WRAP_RET(int, cmark_node_insert_before, (cmark_node *node, cmark_node *sibling), (node, sibling), 0)
-WRAP_RET(int, cmark_node_insert_after, (cmark_node *node, cmark_node *sibling), (node, sibling), 0)
-WRAP_RET(int, cmark_node_replace, (cmark_node *oldnode, cmark_node *newnode), (oldnode, newnode), 0)
-WRAP_RET(int, cmark_node_prepend_child, (cmark_node *node, cmark_node *child), (node, child), 0)
-WRAP_RET(int, cmark_node_append_child, (cmark_node *node, cmark_node *child), (node, child), 0)
-WRAP_VOID(cmark_consolidate_text_nodes, (cmark_node *root), (root))
+CMARK_WRAP_VOID(cmark_node_unlink, (cmark_node *node), (node))
+CMARK_WRAP_RET(int, cmark_node_insert_before, (cmark_node *node, cmark_node *sibling), (node, sibling), 0)
+CMARK_WRAP_RET(int, cmark_node_insert_after, (cmark_node *node, cmark_node *sibling), (node, sibling), 0)
+CMARK_WRAP_RET(int, cmark_node_replace, (cmark_node *oldnode, cmark_node *newnode), (oldnode, newnode), 0)
+CMARK_WRAP_RET(int, cmark_node_prepend_child, (cmark_node *node, cmark_node *child), (node, child), 0)
+CMARK_WRAP_RET(int, cmark_node_append_child, (cmark_node *node, cmark_node *child), (node, child), 0)
+CMARK_WRAP_VOID(cmark_consolidate_text_nodes, (cmark_node *root), (root))
 
 /* --- 解析器 --- */
-WRAP_RET(cmark_parser *, cmark_parser_new, (int options), (options), NULL)
-WRAP_RET(cmark_parser *, cmark_parser_new_with_mem, (int options, cmark_mem *mem), (options, mem), NULL)
-WRAP_RET(cmark_parser *, cmark_parser_new_with_mem_into_root, (int options, cmark_mem *mem, cmark_node *root), (options, mem, root), NULL)
-WRAP_VOID(cmark_parser_free, (cmark_parser *parser), (parser))
-WRAP_VOID(cmark_parser_feed, (cmark_parser *parser, const char *buffer, size_t len), (parser, buffer, len))
-WRAP_RET(cmark_node *, cmark_parser_finish, (cmark_parser *parser), (parser), NULL)
-WRAP_RET(cmark_node *, cmark_parse_document, (const char *buffer, size_t len, int options), (buffer, len, options), NULL)
-WRAP_RET(cmark_node *, cmark_parse_file, (FILE *f, int options), (f, options), NULL)
+CMARK_WRAP_RET(cmark_parser *, cmark_parser_new, (int options), (options), NULL)
+CMARK_WRAP_RET(cmark_parser *, cmark_parser_new_with_mem, (int options, cmark_mem *mem), (options, mem), NULL)
+CMARK_WRAP_RET(cmark_parser *, cmark_parser_new_with_mem_into_root, (int options, cmark_mem *mem, cmark_node *root), (options, mem, root), NULL)
+CMARK_WRAP_VOID(cmark_parser_free, (cmark_parser *parser), (parser))
+CMARK_WRAP_VOID(cmark_parser_feed, (cmark_parser *parser, const char *buffer, size_t len), (parser, buffer, len))
+CMARK_WRAP_RET(cmark_node *, cmark_parser_finish, (cmark_parser *parser), (parser), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_parse_document, (const char *buffer, size_t len, int options), (buffer, len, options), NULL)
+CMARK_WRAP_RET(cmark_node *, cmark_parse_file, (FILE *f, int options), (f, options), NULL)
 
 /* --- 渲染 --- */
-WRAP_RET(char *, cmark_render_xml, (cmark_node *root, int options), (root, options), NULL)
-WRAP_RET(char *, cmark_render_html, (cmark_node *root, int options), (root, options), NULL)
-WRAP_RET(char *, cmark_render_man, (cmark_node *root, int options, int width), (root, options, width), NULL)
-WRAP_RET(char *, cmark_render_commonmark, (cmark_node *root, int options, int width), (root, options, width), NULL)
-WRAP_RET(char *, cmark_render_latex, (cmark_node *root, int options, int width), (root, options, width), NULL)
+CMARK_WRAP_RET(char *, cmark_render_xml, (cmark_node *root, int options), (root, options), NULL)
+CMARK_WRAP_RET(char *, cmark_render_html, (cmark_node *root, int options), (root, options), NULL)
+CMARK_WRAP_RET(char *, cmark_render_man, (cmark_node *root, int options, int width), (root, options, width), NULL)
+CMARK_WRAP_RET(char *, cmark_render_commonmark, (cmark_node *root, int options, int width), (root, options, width), NULL)
+CMARK_WRAP_RET(char *, cmark_render_latex, (cmark_node *root, int options, int width), (root, options, width), NULL)
 
 /* --- 版本 --- */
-WRAP_RET(int, cmark_version, (void), (), 0)
-WRAP_RET(const char *, cmark_version_string, (void), (), NULL)
+CMARK_WRAP_RET(int, cmark_version, (void), (), 0)
+CMARK_WRAP_RET(const char *, cmark_version_string, (void), (), NULL)

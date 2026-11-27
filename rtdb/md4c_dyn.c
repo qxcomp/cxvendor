@@ -36,20 +36,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE md4c_lib_handle_t;
+ static md4c_lib_handle_t md4c_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *md4c_get_sym(md4c_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void md4c_free_lib(md4c_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *md4c_lib_error(void) { return "LoadLibrary failed"; }
+ #define MD4C_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *md4c_lib_handle_t;
+ static md4c_lib_handle_t md4c_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *md4c_get_sym(md4c_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void md4c_free_lib(md4c_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *md4c_lib_error(void) { return dlerror(); }
+ #define MD4C_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -265,18 +265,18 @@ typedef MD_PARSER MD_RENDERER;
 /* ============================================================
  * 动态加载（双库：核心 + html；多候选路径）
  * ============================================================ */
-static lib_handle_t md4c_handle_core = NULL;
-static lib_handle_t md4c_handle_html = NULL;
+static md4c_lib_handle_t md4c_handle_core = NULL;
+static md4c_lib_handle_t md4c_handle_html = NULL;
 static int md4c_init_state = 0;
 
 static void *md4c_sym(const char *name) {
-    void *p = md4c_handle_core ? get_sym(md4c_handle_core, name) : NULL;
+    void *p = md4c_handle_core ? md4c_get_sym(md4c_handle_core, name) : NULL;
     if (p) return p;
-    return md4c_handle_html ? get_sym(md4c_handle_html, name) : NULL;
+    return md4c_handle_html ? md4c_get_sym(md4c_handle_html, name) : NULL;
 }
 
 /* 尝试加载单个库：显式路径、环境变量、LD 目录、soname、.so、Nix、默认路径 */
-static lib_handle_t md4c_load_one(const char *library_path,
+static md4c_lib_handle_t md4c_load_one(const char *library_path,
                                   const char *so_soname,
                                   const char *so_plain,
                                   const char *probe_symbol,
@@ -285,7 +285,7 @@ static lib_handle_t md4c_load_one(const char *library_path,
     static char bufs[96][1024];
     const char *candidates[96];
     int n = 0, i;
-    lib_handle_t h = NULL;
+    md4c_lib_handle_t h = NULL;
 
     if (library_path && *library_path) {
         snprintf(bufs[n], sizeof bufs[0], "%s", library_path);
@@ -311,7 +311,7 @@ static lib_handle_t md4c_load_one(const char *library_path,
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, MD4C_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -354,13 +354,13 @@ static lib_handle_t md4c_load_one(const char *library_path,
 #endif
 
     for (i = 0; i < n; i++) {
-        h = load_lib(candidates[i]);
-        if (h && get_sym(h, probe_symbol)) {
+        h = md4c_load_lib(candidates[i]);
+        if (h && md4c_get_sym(h, probe_symbol)) {
             if (out_idx) *out_idx = i;
             if (out_path) *out_path = candidates[i];
             break;
         }
-        if (h) { free_lib(h); h = NULL; }
+        if (h) { md4c_free_lib(h); h = NULL; }
     }
     return h;
 }
@@ -383,11 +383,11 @@ static int md4c_do_load(const char *library_path) {
                                          "md_html", "MD4C_DYN_LIB", NULL, NULL);
 
     if (!md4c_handle_core) {
-        fprintf(stderr, "md4c_dyn: cannot load md4c core (%s)\n", lib_error());
+        fprintf(stderr, "md4c_dyn: cannot load md4c core (%s)\n", md4c_lib_error());
         return -1;
     }
     if (!md4c_handle_html)
-        fprintf(stderr, "md4c_dyn: warning: md4c-html not loaded, md_html unavailable (%s)\n", lib_error());
+        fprintf(stderr, "md4c_dyn: warning: md4c-html not loaded, md_html unavailable (%s)\n", md4c_lib_error());
     fprintf(stderr, "md4c_dyn: loaded %d %s (core=%s html=%s)\n", core_idx, core_path, md4c_handle_core ? "yes" : "no", md4c_handle_html ? "yes" : "no");
     return 0;
 }
@@ -408,8 +408,8 @@ int md4c_dyn_init(const char *library_path) {
 }
 
 void md4c_dyn_cleanup(void) {
-    if (md4c_handle_core) { free_lib(md4c_handle_core); md4c_handle_core = NULL; }
-    if (md4c_handle_html) { free_lib(md4c_handle_html); md4c_handle_html = NULL; }
+    if (md4c_handle_core) { md4c_free_lib(md4c_handle_core); md4c_handle_core = NULL; }
+    if (md4c_handle_html) { md4c_free_lib(md4c_handle_html); md4c_handle_html = NULL; }
     md4c_init_state = 0;
 }
 
@@ -421,7 +421,7 @@ int md4c_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define MD4C_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -440,12 +440,12 @@ ret name params {                                                          \
  * ============================================================ */
 
 /* --- 核心库：md4c.h --- */
-WRAP_RET(int, md_parse,
+MD4C_WRAP_RET(int, md_parse,
          (const MD_CHAR *text, MD_SIZE size, const MD_PARSER *parser, void *userdata),
          (text, size, parser, userdata), -1)
 
 /* --- html 库：md4c-html.h --- */
-WRAP_RET(int, md_html,
+MD4C_WRAP_RET(int, md_html,
          (const MD_CHAR *input, MD_SIZE input_size,
           void (*process_output)(const MD_CHAR *, MD_SIZE, void *),
           void *userdata, unsigned parser_flags, unsigned renderer_flags),

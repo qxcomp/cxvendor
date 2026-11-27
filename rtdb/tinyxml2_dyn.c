@@ -50,20 +50,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE tinyxml2_lib_handle_t;
+ static tinyxml2_lib_handle_t tinyxml2_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *tinyxml2_get_sym(tinyxml2_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void tinyxml2_free_lib(tinyxml2_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *tinyxml2_lib_error(void) { return "LoadLibrary failed"; }
+ #define TINYXML2_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *tinyxml2_lib_handle_t;
+ static tinyxml2_lib_handle_t tinyxml2_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *tinyxml2_get_sym(tinyxml2_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void tinyxml2_free_lib(tinyxml2_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *tinyxml2_lib_error(void) { return dlerror(); }
+ #define TINYXML2_PATH_SEP ':'
 #endif
 
 /* ============================================================
@@ -82,13 +82,13 @@ size_t tinyxml2_dyn_sizeof_XMLNode(void)      { return 104; }
  * ============================================================ */
 #define TINYXML2_ANCHOR "_ZN8tinyxml211XMLDocumentC1EbNS_10WhitespaceE"
 
-static lib_handle_t tinyxml2_handle = NULL;
+static tinyxml2_lib_handle_t tinyxml2_handle = NULL;
 static int tinyxml2_init_state = 0;
 
 int tinyxml2_dyn_selftest(void);
 
 static void *tinyxml2_sym(const char *name) {
-    return tinyxml2_handle ? get_sym(tinyxml2_handle, name) : NULL;
+    return tinyxml2_handle ? tinyxml2_get_sym(tinyxml2_handle, name) : NULL;
 }
 
 static int tinyxml2_do_load(const char *library_path) {
@@ -122,7 +122,7 @@ static int tinyxml2_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, TINYXML2_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/libtinyxml2.so.11", q);
@@ -166,12 +166,12 @@ static int tinyxml2_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        tinyxml2_handle = load_lib(candidates[i]);
+        tinyxml2_handle = tinyxml2_load_lib(candidates[i]);
         if (tinyxml2_handle) break;
     }
     if (!tinyxml2_handle || !tinyxml2_sym(TINYXML2_ANCHOR)) {
-        fprintf(stderr, "tinyxml2_dyn: cannot load tinyxml2 (%s)\n", lib_error());
-        if (tinyxml2_handle) { free_lib(tinyxml2_handle); tinyxml2_handle = NULL; }
+        fprintf(stderr, "tinyxml2_dyn: cannot load tinyxml2 (%s)\n", tinyxml2_lib_error());
+        if (tinyxml2_handle) { tinyxml2_free_lib(tinyxml2_handle); tinyxml2_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "tinyxml2_dyn: loaded %d %s (11 headers)\n", i, candidates[i]);
@@ -180,7 +180,7 @@ static int tinyxml2_do_load(const char *library_path) {
         if (tinyxml2_dyn_selftest() != 0) {
             fprintf(stderr, "tinyxml2_dyn: selftest failed\n");
             if (!getenv("TINYXML2_DYN_FORCE")) {
-                free_lib(tinyxml2_handle);
+                tinyxml2_free_lib(tinyxml2_handle);
                 tinyxml2_handle = NULL;
                 return -1;
             }

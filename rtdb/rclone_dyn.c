@@ -72,64 +72,64 @@ struct RcloneRPCResult {
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE rclone_lib_handle_t;
+  static rclone_lib_handle_t rclone_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *rclone_get_sym(rclone_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void rclone_free_lib(rclone_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *rclone_lib_error(void) { return "LoadLibrary failed"; }
+  #define RCLONE_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *rclone_lib_handle_t;
+  static rclone_lib_handle_t rclone_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *rclone_get_sym(rclone_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void rclone_free_lib(rclone_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *rclone_lib_error(void) { return dlerror(); }
+  #define RCLONE_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t rclone_handle_lib = NULL;
-static int init_state = 0;   /* 0=未初始化, 1=已加载, -1=加载失败 */
+static rclone_lib_handle_t rclone_handle_lib = NULL;
+static int rclone_init_state = 0;   /* 0=未初始化, 1=已加载, -1=加载失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define RCLONE_MAX_CANDIDATES 64
+#define RCLONE_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 候选路径工具
  * ============================================================ */
-static int push_candidate(const char **candidates,
-                          char bufs[][PATH_BUF_LEN],
+static int rclone_push_candidate(const char **candidates,
+                          char bufs[][RCLONE_PATH_BUF_LEN],
                           int n, const char *path) {
-    if (n >= MAX_CANDIDATES - 1) return n;
-    snprintf(bufs[n], PATH_BUF_LEN, "%s", path);
+    if (n >= RCLONE_MAX_CANDIDATES - 1) return n;
+    snprintf(bufs[n], RCLONE_PATH_BUF_LEN, "%s", path);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static int push_candidate_fmt(const char **candidates,
-                              char bufs[][PATH_BUF_LEN],
+static int rclone_push_candidate_fmt(const char **candidates,
+                              char bufs[][RCLONE_PATH_BUF_LEN],
                               int n, const char *fmt, ...) {
     va_list ap;
-    if (n >= MAX_CANDIDATES - 1) return n;
+    if (n >= RCLONE_MAX_CANDIDATES - 1) return n;
     va_start(ap, fmt);
-    vsnprintf(bufs[n], PATH_BUF_LEN, fmt, ap);
+    vsnprintf(bufs[n], RCLONE_PATH_BUF_LEN, fmt, ap);
     va_end(ap);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static char *dup_string(const char *s) {
+static char *rclone_dup_string(const char *s) {
     size_t len = strlen(s) + 1;
     char *p = (char *)malloc(len);
     if (p) memcpy(p, s, len);
@@ -139,22 +139,22 @@ static char *dup_string(const char *s) {
 /* ============================================================
  * 库加载
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int rclone_do_load(const char *library_path) {
     if (rclone_handle_lib) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[RCLONE_MAX_CANDIDATES][RCLONE_PATH_BUF_LEN];
+    const char *candidates[RCLONE_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
     if (library_path && *library_path) {
-        n = push_candidate(candidates, bufs, n, library_path);
+        n = rclone_push_candidate(candidates, bufs, n, library_path);
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("RCLONE_DYN_LIB");
     if (explicit_lib && *explicit_lib) {
-        n = push_candidate(candidates, bufs, n, explicit_lib);
+        n = rclone_push_candidate(candidates, bufs, n, explicit_lib);
     }
 
     /* 3. 系统搜索路径环境变量中的目录 + 库名 */
@@ -168,25 +168,25 @@ static int do_load(const char *library_path) {
 #endif
     );
     if (env_path && *env_path) {
-        char *copy = dup_string(env_path);
+        char *copy = rclone_dup_string(env_path);
         if (copy) {
             char *p = copy;
             while (p && *p) {
-                char *sep = strchr(p, PATH_SEP);
+                char *sep = strchr(p, RCLONE_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = rclone_push_candidate_fmt(candidates, bufs, n,
                                            "%s/librclone.dll", p);
 #elif defined(__APPLE__)
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = rclone_push_candidate_fmt(candidates, bufs, n,
                                            "%s/librclone.dylib", p);
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = rclone_push_candidate_fmt(candidates, bufs, n,
                                            "%s/librclone.so", p);
 #else
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = rclone_push_candidate_fmt(candidates, bufs, n,
                                            "%s/librclone.so", p);
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = rclone_push_candidate_fmt(candidates, bufs, n,
                                            "%s/liblibrclone.so", p);
 #endif
                 }
@@ -198,13 +198,13 @@ static int do_load(const char *library_path) {
 
     /* 4. 默认库名 */
 #ifdef _WIN32
-    n = push_candidate(candidates, bufs, n, "librclone.dll");
+    n = rclone_push_candidate(candidates, bufs, n, "librclone.dll");
 #elif defined(__APPLE__)
-    n = push_candidate(candidates, bufs, n, "librclone.dylib");
-    n = push_candidate(candidates, bufs, n, "librclone.so");
+    n = rclone_push_candidate(candidates, bufs, n, "librclone.dylib");
+    n = rclone_push_candidate(candidates, bufs, n, "librclone.so");
 #else
-    n = push_candidate(candidates, bufs, n, "librclone.so");
-    n = push_candidate(candidates, bufs, n, "liblibrclone.so");
+    n = rclone_push_candidate(candidates, bufs, n, "librclone.so");
+    n = rclone_push_candidate(candidates, bufs, n, "liblibrclone.so");
 #endif
 
     /* 5. Nix 路径 */
@@ -212,57 +212,57 @@ static int do_load(const char *library_path) {
     const char *home = getenv("HOME");
     if (home && *home) {
 #ifdef __APPLE__
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = rclone_push_candidate_fmt(candidates, bufs, n,
                                "%s/.nix-profile/lib/librclone.dylib", home);
 #else
-        n = push_candidate_fmt(candidates, bufs, n,
+        n = rclone_push_candidate_fmt(candidates, bufs, n,
                                "%s/.nix-profile/lib/librclone.so", home);
 #endif
     }
 #ifdef __APPLE__
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/nix/var/nix/profiles/default/lib/librclone.dylib");
 #else
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/nix/var/nix/profiles/default/lib/librclone.so");
 #endif
 #endif
 
     /* 6. 平台默认路径 */
 #ifdef __APPLE__
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/opt/local/lib/librclone.dylib");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/local/lib/librclone.dylib");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/opt/homebrew/lib/librclone.dylib");
 #elif defined(__linux__) || defined(__ANDROID__)
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/local/lib/librclone.so");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/lib/x86_64-linux-gnu/librclone.so");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/lib/aarch64-linux-gnu/librclone.so");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/lib/librclone.so");
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/local/lib/librclone.so");
-    n = push_candidate(candidates, bufs, n,
+    n = rclone_push_candidate(candidates, bufs, n,
                        "/usr/lib/librclone.so");
 #endif
     candidates[n] = NULL;
 
     for (int i = 0; i < n; i++) {
-        rclone_handle_lib = load_lib(candidates[i]);
+        rclone_handle_lib = rclone_load_lib(candidates[i]);
         if (!rclone_handle_lib) continue;
 
         /* 验证基础符号：RcloneInitialize */
-        if (!get_sym(rclone_handle_lib, "RcloneInitialize")) {
+        if (!rclone_get_sym(rclone_handle_lib, "RcloneInitialize")) {
             fprintf(stderr,
                     "rclone_dyn: %s does not export RcloneInitialize, skipped\n",
                     candidates[i]);
-            free_lib(rclone_handle_lib);
+            rclone_free_lib(rclone_handle_lib);
             rclone_handle_lib = NULL;
             continue;
         }
@@ -271,7 +271,7 @@ static int do_load(const char *library_path) {
     }
 
     if (!rclone_handle_lib) {
-        const char *err = lib_error();
+        const char *err = rclone_lib_error();
         fprintf(stderr, "rclone_dyn: cannot load librclone (%s)\n",
                 err ? err : "unknown error");
         return -1;
@@ -283,20 +283,20 @@ static int do_load(const char *library_path) {
  * 一次性初始化
  * ============================================================ */
 int rclone_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (rclone_init_state == 0) {
+        rclone_init_state = (rclone_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && rclone_handle_lib != NULL) ? 1 : 0;
+    return (rclone_init_state == 1 && rclone_handle_lib != NULL) ? 1 : 0;
 }
 
 int rclone_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (rclone_init_state == 1) return 0;
+    if (rclone_init_state == -1) return -1;
+    if (rclone_do_load(library_path) == 0) {
+        rclone_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    rclone_init_state = -1;
     return -1;
 }
 
@@ -307,18 +307,18 @@ int rclone_dyn_init(const char *library_path) {
  *   - 只有加载失败状态才复位为 0，允许修正路径/环境变量后重试。
  */
 void rclone_dyn_cleanup(void) {
-    if (init_state == -1) {
-        init_state = 0;
+    if (rclone_init_state == -1) {
+        rclone_init_state = 0;
     }
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                           \
+#define RCLONE_RESOLVE(var, name, fallback) do {                           \
     if (!(var)) {                                                   \
         if (!rclone_libok()) return fallback;                       \
-        *(void **)(&(var)) = get_sym(rclone_handle_lib, name);      \
+        *(void **)(&(var)) = rclone_get_sym(rclone_handle_lib, name);      \
         if (!(var)) {                                               \
             fprintf(stderr, "rclone_dyn: dlsym failed: %s\n", name);\
             return fallback;                                        \
@@ -329,7 +329,7 @@ void rclone_dyn_cleanup(void) {
 #define RESOLVE_VOID(var, name) do {                                \
     if (!(var)) {                                                   \
         if (!rclone_libok()) return;                                \
-        *(void **)(&(var)) = get_sym(rclone_handle_lib, name);      \
+        *(void **)(&(var)) = rclone_get_sym(rclone_handle_lib, name);      \
         if (!(var)) {                                               \
             fprintf(stderr, "rclone_dyn: dlsym failed: %s\n", name);\
             return;                                                 \
@@ -367,7 +367,7 @@ struct RcloneRPCResult RcloneRPC(char *method, char *input) {
 
     if (!fn) {
         if (!rclone_libok()) return result;
-        *(void **)(&fn) = get_sym(rclone_handle_lib, "RcloneRPC");
+        *(void **)(&fn) = rclone_get_sym(rclone_handle_lib, "RcloneRPC");
         if (!fn) {
             fprintf(stderr, "rclone_dyn: dlsym failed: RcloneRPC\n");
             return result;

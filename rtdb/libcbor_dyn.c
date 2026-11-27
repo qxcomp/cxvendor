@@ -32,20 +32,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE libcbor_lib_handle_t;
+ static libcbor_lib_handle_t libcbor_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *libcbor_get_sym(libcbor_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void libcbor_free_lib(libcbor_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *libcbor_lib_error(void) { return "LoadLibrary failed"; }
+ #define LIBCBOR_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *libcbor_lib_handle_t;
+ static libcbor_lib_handle_t libcbor_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *libcbor_get_sym(libcbor_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void libcbor_free_lib(libcbor_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *libcbor_lib_error(void) { return dlerror(); }
+ #define LIBCBOR_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -173,11 +173,11 @@ typedef void (*_cbor_free_t)(void*);
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t libcbor_handle = NULL;
+static libcbor_lib_handle_t libcbor_handle = NULL;
 static int libcbor_init_state = 0;
 
 static void *libcbor_sym(const char *name) {
-    return libcbor_handle ? get_sym(libcbor_handle, name) : NULL;
+    return libcbor_handle ? libcbor_get_sym(libcbor_handle, name) : NULL;
 }
 
 static int libcbor_do_load(const char *library_path) {
@@ -215,7 +215,7 @@ static int libcbor_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, LIBCBOR_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -258,13 +258,13 @@ static int libcbor_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        libcbor_handle = load_lib(candidates[i]);
+        libcbor_handle = libcbor_load_lib(candidates[i]);
         // printf("try %d %s\n", i, candidates[i]);
         if (libcbor_handle) { res = i; break; }
     }
     if (!libcbor_handle || !libcbor_sym("cbor_build_uint8")) {
-        fprintf(stderr, "libcbor_dyn: cannot load libcbor (%s)\n", lib_error());
-        if (libcbor_handle) { free_lib(libcbor_handle); libcbor_handle = NULL; }
+        fprintf(stderr, "libcbor_dyn: cannot load libcbor (%s)\n", libcbor_lib_error());
+        if (libcbor_handle) { libcbor_free_lib(libcbor_handle); libcbor_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "libcbor_dyn: loaded %d %s\n", res, candidates[res]);
@@ -287,7 +287,7 @@ int libcbor_dyn_init(const char *library_path) {
 }
 
 void libcbor_dyn_cleanup(void) {
-    if (libcbor_handle) { free_lib(libcbor_handle); libcbor_handle = NULL; }
+    if (libcbor_handle) { libcbor_free_lib(libcbor_handle); libcbor_handle = NULL; }
     libcbor_init_state = 0;
 }
 
@@ -299,7 +299,7 @@ int libcbor_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                            \
+#define LIBCBOR_WRAP_RET(ret, name, params, args, fallback)                            \
 ret name params {                                                              \
     static ret (*fn) params = NULL;                                            \
     if (!fn) {                                                                 \
@@ -312,7 +312,7 @@ ret name params {                                                              \
     }                                                                          \
     return fn args;                                                            \
 }
-#define WRAP_VOID(name, params, args)                                          \
+#define LIBCBOR_WRAP_VOID(name, params, args)                                          \
 void name params {                                                             \
     static void (*fn) params = NULL;                                           \
     if (!fn) {                                                                 \
@@ -329,184 +329,184 @@ void name params {                                                             \
 /* ============================================================
  * 导出函数封装（公开头文件声明的 181 个函数，函数名保持原生原样）
  * ============================================================ */
-WRAP_RET(size_t, cbor_array_allocated, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t*, cbor_array_get, (const cbor_item_t* item, size_t index), (item, index), NULL)
-WRAP_RET(cbor_item_t**, cbor_array_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(bool, cbor_array_is_definite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_array_is_indefinite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_array_push, (cbor_item_t* array, cbor_item_t* pushee), (array, pushee), 0)
-WRAP_RET(bool, cbor_array_replace, (cbor_item_t* item, size_t index, cbor_item_t* value), (item, index, value), 0)
-WRAP_RET(bool, cbor_array_set, (cbor_item_t* item, size_t index, cbor_item_t* value), (item, index, value), 0)
-WRAP_RET(size_t, cbor_array_size, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t*, cbor_build_bool, (bool value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_bytestring, (cbor_data handle, size_t length), (handle, length), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_ctrl, (uint8_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_float2, (float value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_float4, (float value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_float8, (double value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_negint16, (uint16_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_negint32, (uint32_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_negint64, (uint64_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_negint8, (uint8_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_string, (const char* val), (val), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_stringn, (const char* val, size_t length), (val, length), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_tag, (uint64_t value, cbor_item_t* item), (value, item), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_uint16, (uint16_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_uint32, (uint32_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_uint64, (uint64_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_build_uint8, (uint8_t value), (value), NULL)
-WRAP_RET(bool, cbor_bytestring_add_chunk, (cbor_item_t* item, cbor_item_t* chunk), (item, chunk), 0)
-WRAP_RET(size_t, cbor_bytestring_chunk_count, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t**, cbor_bytestring_chunks_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(cbor_mutable_data, cbor_bytestring_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(bool, cbor_bytestring_is_definite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_bytestring_is_indefinite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(size_t, cbor_bytestring_length, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_bytestring_set_handle, (cbor_item_t* item, cbor_mutable_data data, size_t length), (item, data, length))
-WRAP_RET(uint8_t, cbor_ctrl_value, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_decref, (cbor_item_t** item), (item))
-WRAP_RET(size_t, cbor_encode_array_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_bool, (bool a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_break, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_bytestring_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_ctrl, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_double, (double a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_half, (float a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_indef_array_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_indef_bytestring_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_indef_map_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_indef_string_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_map_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_negint, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_negint16, (uint16_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_negint32, (uint32_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_negint64, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_negint8, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_null, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(size_t, cbor_encode_single, (float a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_string_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_tag, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_uint, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_uint16, (uint16_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_uint32, (uint32_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_uint64, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_uint8, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
-WRAP_RET(size_t, cbor_encode_undef, (unsigned char* a0, size_t a1), (a0, a1), 0)
-WRAP_RET(bool, cbor_float_ctrl_is_ctrl, (const cbor_item_t* item), (item), 0)
-WRAP_RET(double, cbor_float_get_float, (const cbor_item_t* item), (item), 0)
-WRAP_RET(float, cbor_float_get_float2, (const cbor_item_t* item), (item), 0)
-WRAP_RET(float, cbor_float_get_float4, (const cbor_item_t* item), (item), 0)
-WRAP_RET(double, cbor_float_get_float8, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_float_width, cbor_float_get_width, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_get_bool, (const cbor_item_t* item), (item), 0)
-WRAP_RET(uint64_t, cbor_get_int, (const cbor_item_t* item), (item), 0)
-WRAP_RET(uint16_t, cbor_get_uint16, (const cbor_item_t* item), (item), 0)
-WRAP_RET(uint32_t, cbor_get_uint32, (const cbor_item_t* item), (item), 0)
-WRAP_RET(uint64_t, cbor_get_uint64, (const cbor_item_t* item), (item), 0)
-WRAP_RET(uint8_t, cbor_get_uint8, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t*, cbor_incref, (cbor_item_t* item), (item), NULL)
-WRAP_RET(cbor_int_width, cbor_int_get_width, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_intermediate_decref, (cbor_item_t* item), (item))
-WRAP_RET(bool, cbor_is_bool, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_is_float, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_is_int, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_is_null, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_is_undef, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_array, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_bytestring, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_float_ctrl, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_map, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_negint, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_string, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_tag, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_isa_uint, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_map_add, (cbor_item_t* item, struct cbor_pair pair), (item, pair), 0)
-WRAP_RET(size_t, cbor_map_allocated, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t*, cbor_map_get, (const cbor_item_t* map, const cbor_item_t* key, bool (*eq)(const cbor_item_t*, const cbor_item_t*)), (map, key, eq), NULL)
-WRAP_RET(struct cbor_pair*, cbor_map_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(bool, cbor_map_is_definite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_map_is_indefinite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(size_t, cbor_map_size, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_mark_negint, (cbor_item_t* item), (item))
-WRAP_VOID(cbor_mark_uint, (cbor_item_t* item), (item))
-WRAP_RET(cbor_item_t*, cbor_move, (cbor_item_t* item), (item), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_ctrl, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_definite_array, (size_t size), (size), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_definite_bytestring, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_definite_map, (size_t size), (size), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_definite_string, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_float2, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_float4, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_float8, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_indefinite_array, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_indefinite_bytestring, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_indefinite_map, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_indefinite_string, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_int16, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_int32, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_int64, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_int8, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_null, (void), (), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_tag, (uint64_t value), (value), NULL)
-WRAP_RET(cbor_item_t*, cbor_new_undef, (void), (), NULL)
-WRAP_VOID(cbor_null_array_start_callback, (void* a0, uint64_t a1), (a0, a1))
-WRAP_VOID(cbor_null_boolean_callback, (void* a0, bool a1), (a0, a1))
-WRAP_VOID(cbor_null_byte_string_callback, (void* a0, cbor_data a1, uint64_t a2), (a0, a1, a2))
-WRAP_VOID(cbor_null_byte_string_start_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_float2_callback, (void* a0, float a1), (a0, a1))
-WRAP_VOID(cbor_null_float4_callback, (void* a0, float a1), (a0, a1))
-WRAP_VOID(cbor_null_float8_callback, (void* a0, double a1), (a0, a1))
-WRAP_VOID(cbor_null_indef_array_start_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_indef_break_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_indef_map_start_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_map_start_callback, (void* a0, uint64_t a1), (a0, a1))
-WRAP_VOID(cbor_null_negint16_callback, (void* a0, uint16_t a1), (a0, a1))
-WRAP_VOID(cbor_null_negint32_callback, (void* a0, uint32_t a1), (a0, a1))
-WRAP_VOID(cbor_null_negint64_callback, (void* a0, uint64_t a1), (a0, a1))
-WRAP_VOID(cbor_null_negint8_callback, (void* a0, uint8_t a1), (a0, a1))
-WRAP_VOID(cbor_null_null_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_string_callback, (void* a0, cbor_data a1, uint64_t a2), (a0, a1, a2))
-WRAP_VOID(cbor_null_string_start_callback, (void* a0), (a0))
-WRAP_VOID(cbor_null_tag_callback, (void* a0, uint64_t a1), (a0, a1))
-WRAP_VOID(cbor_null_uint16_callback, (void* a0, uint16_t a1), (a0, a1))
-WRAP_VOID(cbor_null_uint32_callback, (void* a0, uint32_t a1), (a0, a1))
-WRAP_VOID(cbor_null_uint64_callback, (void* a0, uint64_t a1), (a0, a1))
-WRAP_VOID(cbor_null_uint8_callback, (void* a0, uint8_t a1), (a0, a1))
-WRAP_VOID(cbor_null_undefined_callback, (void* a0), (a0))
-WRAP_RET(size_t, cbor_refcount, (const cbor_item_t* item), (item), 0)
-WRAP_RET(size_t, cbor_serialize, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_alloc, (const cbor_item_t* item, unsigned char** buffer, size_t* buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_array, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_bytestring, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_float_ctrl, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_map, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_negint, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_string, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_tag, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialize_uint, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
-WRAP_RET(size_t, cbor_serialized_size, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_set_allocs, (_cbor_malloc_t custom_malloc, _cbor_realloc_t custom_realloc, _cbor_free_t custom_free), (custom_malloc, custom_realloc, custom_free))
-WRAP_VOID(cbor_set_bool, (cbor_item_t* item, bool value), (item, value))
-WRAP_VOID(cbor_set_ctrl, (cbor_item_t* item, uint8_t value), (item, value))
-WRAP_VOID(cbor_set_float2, (cbor_item_t* item, float value), (item, value))
-WRAP_VOID(cbor_set_float4, (cbor_item_t* item, float value), (item, value))
-WRAP_VOID(cbor_set_float8, (cbor_item_t* item, double value), (item, value))
-WRAP_VOID(cbor_set_uint16, (cbor_item_t* item, uint16_t value), (item, value))
-WRAP_VOID(cbor_set_uint32, (cbor_item_t* item, uint32_t value), (item, value))
-WRAP_VOID(cbor_set_uint64, (cbor_item_t* item, uint64_t value), (item, value))
-WRAP_VOID(cbor_set_uint8, (cbor_item_t* item, uint8_t value), (item, value))
-WRAP_RET(struct cbor_decoder_result, cbor_stream_decode, (cbor_data source, size_t source_size, const struct cbor_callbacks* callbacks, void* context), (source, source_size, callbacks, context), ((struct cbor_decoder_result){0}))
-WRAP_RET(bool, cbor_string_add_chunk, (cbor_item_t* item, cbor_item_t* chunk), (item, chunk), 0)
-WRAP_RET(size_t, cbor_string_chunk_count, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_item_t**, cbor_string_chunks_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(size_t, cbor_string_codepoint_count, (const cbor_item_t* item), (item), 0)
-WRAP_RET(cbor_mutable_data, cbor_string_handle, (const cbor_item_t* item), (item), NULL)
-WRAP_RET(bool, cbor_string_is_definite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(bool, cbor_string_is_indefinite, (const cbor_item_t* item), (item), 0)
-WRAP_RET(size_t, cbor_string_length, (const cbor_item_t* item), (item), 0)
-WRAP_VOID(cbor_string_set_handle, (cbor_item_t* item, cbor_mutable_data data, size_t length), (item, data, length))
-WRAP_RET(bool, cbor_structurally_equal, (const cbor_item_t* item1, const cbor_item_t* item2), (item1, item2), 0)
-WRAP_RET(cbor_item_t*, cbor_tag_item, (const cbor_item_t* tag), (tag), NULL)
-WRAP_VOID(cbor_tag_set_item, (cbor_item_t* tag, cbor_item_t* tagged_item), (tag, tagged_item))
-WRAP_RET(uint64_t, cbor_tag_value, (const cbor_item_t* tag), (tag), 0)
-WRAP_RET(cbor_type, cbor_typeof, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_array_allocated, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_array_get, (const cbor_item_t* item, size_t index), (item, index), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t**, cbor_array_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(bool, cbor_array_is_definite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_array_is_indefinite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_array_push, (cbor_item_t* array, cbor_item_t* pushee), (array, pushee), 0)
+LIBCBOR_WRAP_RET(bool, cbor_array_replace, (cbor_item_t* item, size_t index, cbor_item_t* value), (item, index, value), 0)
+LIBCBOR_WRAP_RET(bool, cbor_array_set, (cbor_item_t* item, size_t index, cbor_item_t* value), (item, index, value), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_array_size, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_bool, (bool value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_bytestring, (cbor_data handle, size_t length), (handle, length), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_ctrl, (uint8_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_float2, (float value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_float4, (float value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_float8, (double value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_negint16, (uint16_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_negint32, (uint32_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_negint64, (uint64_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_negint8, (uint8_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_string, (const char* val), (val), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_stringn, (const char* val, size_t length), (val, length), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_tag, (uint64_t value, cbor_item_t* item), (value, item), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_uint16, (uint16_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_uint32, (uint32_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_uint64, (uint64_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_build_uint8, (uint8_t value), (value), NULL)
+LIBCBOR_WRAP_RET(bool, cbor_bytestring_add_chunk, (cbor_item_t* item, cbor_item_t* chunk), (item, chunk), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_bytestring_chunk_count, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t**, cbor_bytestring_chunks_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(cbor_mutable_data, cbor_bytestring_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(bool, cbor_bytestring_is_definite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_bytestring_is_indefinite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_bytestring_length, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_bytestring_set_handle, (cbor_item_t* item, cbor_mutable_data data, size_t length), (item, data, length))
+LIBCBOR_WRAP_RET(uint8_t, cbor_ctrl_value, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_decref, (cbor_item_t** item), (item))
+LIBCBOR_WRAP_RET(size_t, cbor_encode_array_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_bool, (bool a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_break, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_bytestring_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_ctrl, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_double, (double a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_half, (float a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_indef_array_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_indef_bytestring_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_indef_map_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_indef_string_start, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_map_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_negint, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_negint16, (uint16_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_negint32, (uint32_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_negint64, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_negint8, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_null, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_single, (float a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_string_start, (size_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_tag, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_uint, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_uint16, (uint16_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_uint32, (uint32_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_uint64, (uint64_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_uint8, (uint8_t a0, unsigned char* a1, size_t a2), (a0, a1, a2), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_encode_undef, (unsigned char* a0, size_t a1), (a0, a1), 0)
+LIBCBOR_WRAP_RET(bool, cbor_float_ctrl_is_ctrl, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(double, cbor_float_get_float, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(float, cbor_float_get_float2, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(float, cbor_float_get_float4, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(double, cbor_float_get_float8, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_float_width, cbor_float_get_width, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_get_bool, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(uint64_t, cbor_get_int, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(uint16_t, cbor_get_uint16, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(uint32_t, cbor_get_uint32, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(uint64_t, cbor_get_uint64, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(uint8_t, cbor_get_uint8, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_incref, (cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(cbor_int_width, cbor_int_get_width, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_intermediate_decref, (cbor_item_t* item), (item))
+LIBCBOR_WRAP_RET(bool, cbor_is_bool, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_is_float, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_is_int, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_is_null, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_is_undef, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_array, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_bytestring, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_float_ctrl, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_map, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_negint, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_string, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_tag, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_isa_uint, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_map_add, (cbor_item_t* item, struct cbor_pair pair), (item, pair), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_map_allocated, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_map_get, (const cbor_item_t* map, const cbor_item_t* key, bool (*eq)(const cbor_item_t*, const cbor_item_t*)), (map, key, eq), NULL)
+LIBCBOR_WRAP_RET(struct cbor_pair*, cbor_map_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(bool, cbor_map_is_definite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_map_is_indefinite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_map_size, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_mark_negint, (cbor_item_t* item), (item))
+LIBCBOR_WRAP_VOID(cbor_mark_uint, (cbor_item_t* item), (item))
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_move, (cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_ctrl, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_definite_array, (size_t size), (size), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_definite_bytestring, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_definite_map, (size_t size), (size), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_definite_string, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_float2, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_float4, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_float8, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_indefinite_array, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_indefinite_bytestring, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_indefinite_map, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_indefinite_string, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_int16, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_int32, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_int64, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_int8, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_null, (void), (), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_tag, (uint64_t value), (value), NULL)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_new_undef, (void), (), NULL)
+LIBCBOR_WRAP_VOID(cbor_null_array_start_callback, (void* a0, uint64_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_boolean_callback, (void* a0, bool a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_byte_string_callback, (void* a0, cbor_data a1, uint64_t a2), (a0, a1, a2))
+LIBCBOR_WRAP_VOID(cbor_null_byte_string_start_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_float2_callback, (void* a0, float a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_float4_callback, (void* a0, float a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_float8_callback, (void* a0, double a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_indef_array_start_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_indef_break_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_indef_map_start_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_map_start_callback, (void* a0, uint64_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_negint16_callback, (void* a0, uint16_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_negint32_callback, (void* a0, uint32_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_negint64_callback, (void* a0, uint64_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_negint8_callback, (void* a0, uint8_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_null_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_string_callback, (void* a0, cbor_data a1, uint64_t a2), (a0, a1, a2))
+LIBCBOR_WRAP_VOID(cbor_null_string_start_callback, (void* a0), (a0))
+LIBCBOR_WRAP_VOID(cbor_null_tag_callback, (void* a0, uint64_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_uint16_callback, (void* a0, uint16_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_uint32_callback, (void* a0, uint32_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_uint64_callback, (void* a0, uint64_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_uint8_callback, (void* a0, uint8_t a1), (a0, a1))
+LIBCBOR_WRAP_VOID(cbor_null_undefined_callback, (void* a0), (a0))
+LIBCBOR_WRAP_RET(size_t, cbor_refcount, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_alloc, (const cbor_item_t* item, unsigned char** buffer, size_t* buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_array, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_bytestring, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_float_ctrl, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_map, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_negint, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_string, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_tag, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialize_uint, (const cbor_item_t* item, cbor_mutable_data buffer, size_t buffer_size), (item, buffer, buffer_size), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_serialized_size, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_set_allocs, (_cbor_malloc_t custom_malloc, _cbor_realloc_t custom_realloc, _cbor_free_t custom_free), (custom_malloc, custom_realloc, custom_free))
+LIBCBOR_WRAP_VOID(cbor_set_bool, (cbor_item_t* item, bool value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_ctrl, (cbor_item_t* item, uint8_t value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_float2, (cbor_item_t* item, float value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_float4, (cbor_item_t* item, float value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_float8, (cbor_item_t* item, double value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_uint16, (cbor_item_t* item, uint16_t value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_uint32, (cbor_item_t* item, uint32_t value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_uint64, (cbor_item_t* item, uint64_t value), (item, value))
+LIBCBOR_WRAP_VOID(cbor_set_uint8, (cbor_item_t* item, uint8_t value), (item, value))
+LIBCBOR_WRAP_RET(struct cbor_decoder_result, cbor_stream_decode, (cbor_data source, size_t source_size, const struct cbor_callbacks* callbacks, void* context), (source, source_size, callbacks, context), ((struct cbor_decoder_result){0}))
+LIBCBOR_WRAP_RET(bool, cbor_string_add_chunk, (cbor_item_t* item, cbor_item_t* chunk), (item, chunk), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_string_chunk_count, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_item_t**, cbor_string_chunks_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(size_t, cbor_string_codepoint_count, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(cbor_mutable_data, cbor_string_handle, (const cbor_item_t* item), (item), NULL)
+LIBCBOR_WRAP_RET(bool, cbor_string_is_definite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(bool, cbor_string_is_indefinite, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_RET(size_t, cbor_string_length, (const cbor_item_t* item), (item), 0)
+LIBCBOR_WRAP_VOID(cbor_string_set_handle, (cbor_item_t* item, cbor_mutable_data data, size_t length), (item, data, length))
+LIBCBOR_WRAP_RET(bool, cbor_structurally_equal, (const cbor_item_t* item1, const cbor_item_t* item2), (item1, item2), 0)
+LIBCBOR_WRAP_RET(cbor_item_t*, cbor_tag_item, (const cbor_item_t* tag), (tag), NULL)
+LIBCBOR_WRAP_VOID(cbor_tag_set_item, (cbor_item_t* tag, cbor_item_t* tagged_item), (tag, tagged_item))
+LIBCBOR_WRAP_RET(uint64_t, cbor_tag_value, (const cbor_item_t* tag), (tag), 0)
+LIBCBOR_WRAP_RET(cbor_type, cbor_typeof, (const cbor_item_t* item), (item), 0)

@@ -29,20 +29,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE lmdb_lib_handle_t;
+ static lmdb_lib_handle_t lmdb_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *lmdb_get_sym(lmdb_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void lmdb_free_lib(lmdb_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *lmdb_lib_error(void) { return "LoadLibrary failed"; }
+ #define LMDB_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *lmdb_lib_handle_t;
+ static lmdb_lib_handle_t lmdb_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *lmdb_get_sym(lmdb_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void lmdb_free_lib(lmdb_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *lmdb_lib_error(void) { return dlerror(); }
+ #define LMDB_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型 */
@@ -102,11 +102,11 @@ typedef int MDB_cursor_op; /* enum ABI == int */
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t lmdb_handle = NULL;
+static lmdb_lib_handle_t lmdb_handle = NULL;
 static int lmdb_init_state = 0;
 
 static void *lmdb_sym(const char *name) {
-    return lmdb_handle ? get_sym(lmdb_handle, name) : NULL;
+    return lmdb_handle ? lmdb_get_sym(lmdb_handle, name) : NULL;
 }
 
 static int lmdb_do_load(const char *library_path) {
@@ -140,7 +140,7 @@ static int lmdb_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, LMDB_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/liblmdb.so", q);
@@ -184,12 +184,12 @@ static int lmdb_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        lmdb_handle = load_lib(candidates[i]);
+        lmdb_handle = lmdb_load_lib(candidates[i]);
         if (lmdb_handle) break;
     }
     if (!lmdb_handle || !lmdb_sym("mdb_env_create")) {
-        fprintf(stderr, "lmdb_dyn: cannot load lmdb (%s)\n", lib_error());
-        if (lmdb_handle) { free_lib(lmdb_handle); lmdb_handle = NULL; }
+        fprintf(stderr, "lmdb_dyn: cannot load lmdb (%s)\n", lmdb_lib_error());
+        if (lmdb_handle) { lmdb_free_lib(lmdb_handle); lmdb_handle = NULL; }
         return -1;
     }
     fprintf(stderr, "lmdb_dyn: loaded %d %s\n", i, candidates[i]);
@@ -225,7 +225,7 @@ int lmdb_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                        \
+#define LMDB_WRAP_RET(ret, name, params, args, fallback)                        \
 ret name params {                                                          \
     static ret (*fn) params = NULL;                                        \
     if (!fn) {                                                             \
@@ -239,7 +239,7 @@ ret name params {                                                          \
     return fn args;                                                        \
 }
 
-#define WRAP_VOID(name, params, args)                                      \
+#define LMDB_WRAP_VOID(name, params, args)                                      \
 void name params {                                                         \
     static void (*fn) params = NULL;                                       \
     if (!fn) {                                                             \
@@ -256,59 +256,59 @@ void name params {                                                         \
 /* ============================================================
  * 导出函数封装（lmdb.h 公开 API 56 个）
  * ============================================================ */
-WRAP_RET(char *, mdb_version, (int *a0, int *a1, int *a2), (a0, a1, a2), NULL)
-WRAP_RET(char *, mdb_strerror, (int a0), (a0), NULL)
-WRAP_RET(int, mdb_env_create, (MDB_env **a0), (a0), -1)
-WRAP_RET(int, mdb_env_open, (MDB_env *a0, const char *a1, unsigned int a2, mdb_mode_t a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_env_copy, (MDB_env *a0, const char *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_copyfd, (MDB_env *a0, mdb_filehandle_t a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_copy2, (MDB_env *a0, const char *a1, unsigned int a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_env_copyfd2, (MDB_env *a0, mdb_filehandle_t a1, unsigned int a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_env_stat, (MDB_env *a0, MDB_stat *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_info, (MDB_env *a0, MDB_envinfo *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_sync, (MDB_env *a0, int a1), (a0, a1), -1)
-WRAP_VOID(mdb_env_close, (MDB_env *a0), (a0))
-WRAP_RET(int, mdb_env_set_flags, (MDB_env *a0, unsigned int a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_env_get_flags, (MDB_env *a0, unsigned int *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_get_path, (MDB_env *a0, const char **a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_get_fd, (MDB_env *a0, mdb_filehandle_t *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_set_mapsize, (MDB_env *a0, size_t a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_set_maxreaders, (MDB_env *a0, unsigned int a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_get_maxreaders, (MDB_env *a0, unsigned int *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_set_maxdbs, (MDB_env *a0, MDB_dbi a1), (a0, a1), -1)
-WRAP_RET(int, mdb_env_get_maxkeysize, (MDB_env *a0), (a0), -1)
-WRAP_RET(int, mdb_env_set_userctx, (MDB_env *a0, void *a1), (a0, a1), -1)
-WRAP_RET(void *, mdb_env_get_userctx, (MDB_env *a0), (a0), NULL)
-WRAP_RET(int, mdb_env_set_assert, (MDB_env *a0, MDB_assert_func *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_txn_begin, (MDB_env *a0, MDB_txn *a1, unsigned int a2, MDB_txn **a3), (a0, a1, a2, a3), -1)
-WRAP_RET(MDB_env *, mdb_txn_env, (MDB_txn *a0), (a0), NULL)
-WRAP_RET(size_t, mdb_txn_id, (MDB_txn *a0), (a0), 0)
-WRAP_RET(int, mdb_txn_commit, (MDB_txn *a0), (a0), -1)
-WRAP_VOID(mdb_txn_abort, (MDB_txn *a0), (a0))
-WRAP_VOID(mdb_txn_reset, (MDB_txn *a0), (a0))
-WRAP_RET(int, mdb_txn_renew, (MDB_txn *a0), (a0), -1)
-WRAP_RET(int, mdb_dbi_open, (MDB_txn *a0, const char *a1, unsigned int a2, MDB_dbi *a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_stat, (MDB_txn *a0, MDB_dbi a1, MDB_stat *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_dbi_flags, (MDB_txn *a0, MDB_dbi a1, unsigned int *a2), (a0, a1, a2), -1)
-WRAP_VOID(mdb_dbi_close, (MDB_env *a0, MDB_dbi a1), (a0, a1))
-WRAP_RET(int, mdb_drop, (MDB_txn *a0, MDB_dbi a1, int a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_set_compare, (MDB_txn *a0, MDB_dbi a1, MDB_cmp_func *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_set_dupsort, (MDB_txn *a0, MDB_dbi a1, MDB_cmp_func *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_set_relfunc, (MDB_txn *a0, MDB_dbi a1, MDB_rel_func *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_set_relctx, (MDB_txn *a0, MDB_dbi a1, void *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_get, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_put, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3, unsigned int a4), (a0, a1, a2, a3, a4), -1)
-WRAP_RET(int, mdb_del, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_cursor_open, (MDB_txn *a0, MDB_dbi a1, MDB_cursor **a2), (a0, a1, a2), -1)
-WRAP_VOID(mdb_cursor_close, (MDB_cursor *a0), (a0))
-WRAP_RET(int, mdb_cursor_renew, (MDB_txn *a0, MDB_cursor *a1), (a0, a1), -1)
-WRAP_RET(MDB_txn *, mdb_cursor_txn, (MDB_cursor *a0), (a0), NULL)
-WRAP_RET(MDB_dbi, mdb_cursor_dbi, (MDB_cursor *a0), (a0), 0)
-WRAP_RET(int, mdb_cursor_get, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, MDB_cursor_op a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_cursor_put, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, unsigned int a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_cursor_del, (MDB_cursor *a0, unsigned int a1), (a0, a1), -1)
-WRAP_RET(int, mdb_cursor_count, (MDB_cursor *a0, size_t *a1), (a0, a1), -1)
-WRAP_RET(int, mdb_cmp, (MDB_txn *a0, MDB_dbi a1, const MDB_val *a2, const MDB_val *a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_dcmp, (MDB_txn *a0, MDB_dbi a1, const MDB_val *a2, const MDB_val *a3), (a0, a1, a2, a3), -1)
-WRAP_RET(int, mdb_reader_list, (MDB_env *a0, MDB_msg_func *a1, void *a2), (a0, a1, a2), -1)
-WRAP_RET(int, mdb_reader_check, (MDB_env *a0, int *a1), (a0, a1), -1)
+LMDB_WRAP_RET(char *, mdb_version, (int *a0, int *a1, int *a2), (a0, a1, a2), NULL)
+LMDB_WRAP_RET(char *, mdb_strerror, (int a0), (a0), NULL)
+LMDB_WRAP_RET(int, mdb_env_create, (MDB_env **a0), (a0), -1)
+LMDB_WRAP_RET(int, mdb_env_open, (MDB_env *a0, const char *a1, unsigned int a2, mdb_mode_t a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_env_copy, (MDB_env *a0, const char *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_copyfd, (MDB_env *a0, mdb_filehandle_t a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_copy2, (MDB_env *a0, const char *a1, unsigned int a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_env_copyfd2, (MDB_env *a0, mdb_filehandle_t a1, unsigned int a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_env_stat, (MDB_env *a0, MDB_stat *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_info, (MDB_env *a0, MDB_envinfo *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_sync, (MDB_env *a0, int a1), (a0, a1), -1)
+LMDB_WRAP_VOID(mdb_env_close, (MDB_env *a0), (a0))
+LMDB_WRAP_RET(int, mdb_env_set_flags, (MDB_env *a0, unsigned int a1, int a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_env_get_flags, (MDB_env *a0, unsigned int *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_get_path, (MDB_env *a0, const char **a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_get_fd, (MDB_env *a0, mdb_filehandle_t *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_set_mapsize, (MDB_env *a0, size_t a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_set_maxreaders, (MDB_env *a0, unsigned int a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_get_maxreaders, (MDB_env *a0, unsigned int *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_set_maxdbs, (MDB_env *a0, MDB_dbi a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_env_get_maxkeysize, (MDB_env *a0), (a0), -1)
+LMDB_WRAP_RET(int, mdb_env_set_userctx, (MDB_env *a0, void *a1), (a0, a1), -1)
+LMDB_WRAP_RET(void *, mdb_env_get_userctx, (MDB_env *a0), (a0), NULL)
+LMDB_WRAP_RET(int, mdb_env_set_assert, (MDB_env *a0, MDB_assert_func *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_txn_begin, (MDB_env *a0, MDB_txn *a1, unsigned int a2, MDB_txn **a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(MDB_env *, mdb_txn_env, (MDB_txn *a0), (a0), NULL)
+LMDB_WRAP_RET(size_t, mdb_txn_id, (MDB_txn *a0), (a0), 0)
+LMDB_WRAP_RET(int, mdb_txn_commit, (MDB_txn *a0), (a0), -1)
+LMDB_WRAP_VOID(mdb_txn_abort, (MDB_txn *a0), (a0))
+LMDB_WRAP_VOID(mdb_txn_reset, (MDB_txn *a0), (a0))
+LMDB_WRAP_RET(int, mdb_txn_renew, (MDB_txn *a0), (a0), -1)
+LMDB_WRAP_RET(int, mdb_dbi_open, (MDB_txn *a0, const char *a1, unsigned int a2, MDB_dbi *a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_stat, (MDB_txn *a0, MDB_dbi a1, MDB_stat *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_dbi_flags, (MDB_txn *a0, MDB_dbi a1, unsigned int *a2), (a0, a1, a2), -1)
+LMDB_WRAP_VOID(mdb_dbi_close, (MDB_env *a0, MDB_dbi a1), (a0, a1))
+LMDB_WRAP_RET(int, mdb_drop, (MDB_txn *a0, MDB_dbi a1, int a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_set_compare, (MDB_txn *a0, MDB_dbi a1, MDB_cmp_func *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_set_dupsort, (MDB_txn *a0, MDB_dbi a1, MDB_cmp_func *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_set_relfunc, (MDB_txn *a0, MDB_dbi a1, MDB_rel_func *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_set_relctx, (MDB_txn *a0, MDB_dbi a1, void *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_get, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_put, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3, unsigned int a4), (a0, a1, a2, a3, a4), -1)
+LMDB_WRAP_RET(int, mdb_del, (MDB_txn *a0, MDB_dbi a1, MDB_val *a2, MDB_val *a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_cursor_open, (MDB_txn *a0, MDB_dbi a1, MDB_cursor **a2), (a0, a1, a2), -1)
+LMDB_WRAP_VOID(mdb_cursor_close, (MDB_cursor *a0), (a0))
+LMDB_WRAP_RET(int, mdb_cursor_renew, (MDB_txn *a0, MDB_cursor *a1), (a0, a1), -1)
+LMDB_WRAP_RET(MDB_txn *, mdb_cursor_txn, (MDB_cursor *a0), (a0), NULL)
+LMDB_WRAP_RET(MDB_dbi, mdb_cursor_dbi, (MDB_cursor *a0), (a0), 0)
+LMDB_WRAP_RET(int, mdb_cursor_get, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, MDB_cursor_op a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_cursor_put, (MDB_cursor *a0, MDB_val *a1, MDB_val *a2, unsigned int a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_cursor_del, (MDB_cursor *a0, unsigned int a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_cursor_count, (MDB_cursor *a0, size_t *a1), (a0, a1), -1)
+LMDB_WRAP_RET(int, mdb_cmp, (MDB_txn *a0, MDB_dbi a1, const MDB_val *a2, const MDB_val *a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_dcmp, (MDB_txn *a0, MDB_dbi a1, const MDB_val *a2, const MDB_val *a3), (a0, a1, a2, a3), -1)
+LMDB_WRAP_RET(int, mdb_reader_list, (MDB_env *a0, MDB_msg_func *a1, void *a2), (a0, a1, a2), -1)
+LMDB_WRAP_RET(int, mdb_reader_check, (MDB_env *a0, int *a1), (a0, a1), -1)

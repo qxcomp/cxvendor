@@ -35,20 +35,20 @@
 /* ---------- 平台适配层 ---------- */
 #ifdef _WIN32
  #include <windows.h>
- typedef HMODULE lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
- static void *get_sym(lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
- static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
- static const char *lib_error(void) { return "LoadLibrary failed"; }
- #define PATH_SEP ';'
+ typedef HMODULE fswatch_lib_handle_t;
+ static fswatch_lib_handle_t fswatch_load_lib(const char *path) { return LoadLibraryA(path); }
+ static void *fswatch_get_sym(fswatch_lib_handle_t h, const char *name) { return (void *)GetProcAddress(h, name); }
+ static void fswatch_free_lib(fswatch_lib_handle_t h) { if (h) FreeLibrary(h); }
+ static const char *fswatch_lib_error(void) { return "LoadLibrary failed"; }
+ #define FSWATCH_PATH_SEP ';'
 #else
  #include <dlfcn.h>
- typedef void *lib_handle_t;
- static lib_handle_t load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
- static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
- static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
- static const char *lib_error(void) { return dlerror(); }
- #define PATH_SEP ':'
+ typedef void *fswatch_lib_handle_t;
+ static fswatch_lib_handle_t fswatch_load_lib(const char *path) { return dlopen(path, RTLD_LAZY | RTLD_LOCAL); }
+ static void *fswatch_get_sym(fswatch_lib_handle_t h, const char *name) { return dlsym(h, name); }
+ static void fswatch_free_lib(fswatch_lib_handle_t h) { if (h) dlclose(h); }
+ static const char *fswatch_lib_error(void) { return dlerror(); }
+ #define FSWATCH_PATH_SEP ':'
 #endif
 
 /* 上游头文件存在时引入，编译器校验同名封装函数原型与类型。
@@ -171,11 +171,11 @@ typedef struct fsw_event_type_filter
 /* ============================================================
  * 动态加载（多候选路径）
  * ============================================================ */
-static lib_handle_t fswatch_handle = NULL;
+static fswatch_lib_handle_t fswatch_handle = NULL;
 static int fswatch_init_state = 0;
 
 static void *fswatch_sym(const char *name) {
-    return fswatch_handle ? get_sym(fswatch_handle, name) : NULL;
+    return fswatch_handle ? fswatch_get_sym(fswatch_handle, name) : NULL;
 }
 
 /* 首次加载成功后调用一次 fsw_init_library()（照 curl/mysql 范式） */
@@ -231,7 +231,7 @@ static int fswatch_do_load(const char *library_path) {
             if (copy) {
                 char *q = copy;
                 while (q && *q && n < 80) {
-                    char *sep = strchr(q, PATH_SEP);
+                    char *sep = strchr(q, FSWATCH_PATH_SEP);
                     if (sep) *sep = 0;
                     if (*q) {
                         snprintf(bufs[n], sizeof bufs[0], "%s/%s", q, so_soname);
@@ -271,17 +271,17 @@ static int fswatch_do_load(const char *library_path) {
 #endif
 
     for (i = 0; i < n; i++) {
-        fswatch_handle = load_lib(candidates[i]);
+        fswatch_handle = fswatch_load_lib(candidates[i]);
         if (!fswatch_handle) continue;
         for (j = 0; j < (int)(sizeof required / sizeof required[0]); j++) {
-            if (!get_sym(fswatch_handle, required[j])) break;
+            if (!fswatch_get_sym(fswatch_handle, required[j])) break;
         }
         if (j == (int)(sizeof required / sizeof required[0])) break;
-        free_lib(fswatch_handle);
+        fswatch_free_lib(fswatch_handle);
         fswatch_handle = NULL;
     }
     if (!fswatch_handle) {
-        fprintf(stderr, "fswatch_dyn: cannot load libfswatch (%s)\n", lib_error());
+        fprintf(stderr, "fswatch_dyn: cannot load libfswatch (%s)\n", fswatch_lib_error());
         return -1;
     }
     fprintf(stderr, "fswatch_dyn: loaded %d %s\n", i, candidates[i]);
@@ -295,7 +295,7 @@ int fswatch_libok(void) {
             return 0;
         }
         if (fswatch_call_init_library() != 0) {
-            free_lib(fswatch_handle);
+            fswatch_free_lib(fswatch_handle);
             fswatch_handle = NULL;
             fswatch_init_state = -1;
             return 0;
@@ -313,7 +313,7 @@ int fswatch_dyn_init(const char *library_path) {
         return -1;
     }
     if (fswatch_call_init_library() != 0) {
-        free_lib(fswatch_handle);
+        fswatch_free_lib(fswatch_handle);
         fswatch_handle = NULL;
         fswatch_init_state = -1;
         return -1;
@@ -335,7 +335,7 @@ int fswatch_dyn_has_symbol(const char *name) {
 /* ============================================================
  * WRAP 宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                          \
+#define FSWATCH_WRAP_RET(ret, name, params, args, fallback)                          \
 ret name params {                                                            \
     static ret (*fn) params = NULL;                                          \
     if (!fn) {                                                               \
@@ -349,7 +349,7 @@ ret name params {                                                            \
     return fn args;                                                          \
 }
 
-#define WRAP_VOID(name, params, args)                                        \
+#define FSWATCH_WRAP_VOID(name, params, args)                                        \
 void name params {                                                           \
     static void (*fn) params = NULL;                                         \
     if (!fn) {                                                               \
@@ -364,7 +364,7 @@ void name params {                                                           \
 }
 
 /* 可选符号：旧版本库缺少该符号时静默返回 fallback，不打印错误 */
-#define WRAP_OPT_RET(ret, name, params, args, fallback)                      \
+#define FSWATCH_WRAP_OPT_RET(ret, name, params, args, fallback)                      \
 ret name params {                                                            \
     static ret (*fn) params = NULL;                                          \
     static int resolved = 0;                                                 \
@@ -381,27 +381,27 @@ ret name params {                                                            \
  * 导出函数封装（libfswatch.h / cevent.h 全部 24 个公开函数，
  * 顺序与头文件一致）
  * ============================================================ */
-WRAP_RET(FSW_STATUS, fsw_init_library, (void), (), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_HANDLE, fsw_init_session, (const enum fsw_monitor_type type), (type), NULL)
-WRAP_RET(FSW_STATUS, fsw_add_path, (const FSW_HANDLE handle, const char *path), (handle, path), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_add_property, (const FSW_HANDLE handle, const char *name, const char *value), (handle, name, value), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_allow_overflow, (const FSW_HANDLE handle, const bool allow_overflow), (handle, allow_overflow), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_callback, (const FSW_HANDLE handle, const FSW_CEVENT_CALLBACK callback, void *data), (handle, callback, data), FSW_ERR_UNKNOWN_ERROR)
-WRAP_OPT_RET(FSW_STATUS, fsw_set_callback_v2, (const FSW_HANDLE handle, const FSW_CEVENT_CALLBACK_V2 callback, void *data), (handle, callback, data), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_latency, (const FSW_HANDLE handle, const double latency), (handle, latency), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_recursive, (const FSW_HANDLE handle, const bool recursive), (handle, recursive), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_directory_only, (const FSW_HANDLE handle, const bool directory_only), (handle, directory_only), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_set_follow_symlinks, (const FSW_HANDLE handle, const bool follow_symlinks), (handle, follow_symlinks), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_add_event_type_filter, (const FSW_HANDLE handle, const fsw_event_type_filter event_type), (handle, event_type), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_add_filter, (const FSW_HANDLE handle, const fsw_cmonitor_filter filter), (handle, filter), FSW_ERR_UNKNOWN_ERROR)
-WRAP_OPT_RET(FSW_STATUS, fsw_set_filter_mode, (const FSW_HANDLE handle, const enum fsw_filter_mode mode), (handle, mode), FSW_ERR_UNKNOWN_ERROR)
-WRAP_OPT_RET(FSW_STATUS, fsw_add_prune_filter, (const FSW_HANDLE handle, const fsw_cmonitor_filter filter), (handle, filter), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_start_monitor, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_stop_monitor, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(bool, fsw_is_running, (const FSW_HANDLE handle), (handle), false)
-WRAP_RET(FSW_STATUS, fsw_destroy_session, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(FSW_STATUS, fsw_last_error, (void), (), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(bool, fsw_is_verbose, (void), (), false)
-WRAP_VOID(fsw_set_verbose, (bool verbose), (verbose))
-WRAP_RET(FSW_STATUS, fsw_get_event_flag_by_name, (const char *name, enum fsw_event_flag *flag), (name, flag), FSW_ERR_UNKNOWN_ERROR)
-WRAP_RET(char *, fsw_get_event_flag_name, (const enum fsw_event_flag flag), (flag), NULL)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_init_library, (void), (), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_HANDLE, fsw_init_session, (const enum fsw_monitor_type type), (type), NULL)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_add_path, (const FSW_HANDLE handle, const char *path), (handle, path), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_add_property, (const FSW_HANDLE handle, const char *name, const char *value), (handle, name, value), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_allow_overflow, (const FSW_HANDLE handle, const bool allow_overflow), (handle, allow_overflow), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_callback, (const FSW_HANDLE handle, const FSW_CEVENT_CALLBACK callback, void *data), (handle, callback, data), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_OPT_RET(FSW_STATUS, fsw_set_callback_v2, (const FSW_HANDLE handle, const FSW_CEVENT_CALLBACK_V2 callback, void *data), (handle, callback, data), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_latency, (const FSW_HANDLE handle, const double latency), (handle, latency), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_recursive, (const FSW_HANDLE handle, const bool recursive), (handle, recursive), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_directory_only, (const FSW_HANDLE handle, const bool directory_only), (handle, directory_only), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_set_follow_symlinks, (const FSW_HANDLE handle, const bool follow_symlinks), (handle, follow_symlinks), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_add_event_type_filter, (const FSW_HANDLE handle, const fsw_event_type_filter event_type), (handle, event_type), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_add_filter, (const FSW_HANDLE handle, const fsw_cmonitor_filter filter), (handle, filter), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_OPT_RET(FSW_STATUS, fsw_set_filter_mode, (const FSW_HANDLE handle, const enum fsw_filter_mode mode), (handle, mode), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_OPT_RET(FSW_STATUS, fsw_add_prune_filter, (const FSW_HANDLE handle, const fsw_cmonitor_filter filter), (handle, filter), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_start_monitor, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_stop_monitor, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(bool, fsw_is_running, (const FSW_HANDLE handle), (handle), false)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_destroy_session, (const FSW_HANDLE handle), (handle), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_last_error, (void), (), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(bool, fsw_is_verbose, (void), (), false)
+FSWATCH_WRAP_VOID(fsw_set_verbose, (bool verbose), (verbose))
+FSWATCH_WRAP_RET(FSW_STATUS, fsw_get_event_flag_by_name, (const char *name, enum fsw_event_flag *flag), (name, flag), FSW_ERR_UNKNOWN_ERROR)
+FSWATCH_WRAP_RET(char *, fsw_get_event_flag_name, (const enum fsw_event_flag flag), (flag), NULL)

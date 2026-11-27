@@ -93,18 +93,18 @@ typedef int PyGILState_STATE;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE python_lib_handle_t;
+  static python_lib_handle_t python_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *python_get_sym(python_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void python_free_lib(python_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *python_lib_error(void) { return "LoadLibrary failed"; }
+  #define PYTHON_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *python_lib_handle_t;
+  static python_lib_handle_t python_load_lib(const char *path) {
       /*
        * libpython 会继续 dlopen 共享扩展模块（_ssl.so、zlib.so 等），
        * 这些模块通常不链接 libpython，而是依赖全局符号解析 Py* API。
@@ -114,53 +114,53 @@ typedef int PyGILState_STATE;
       int flags = RTLD_LAZY | RTLD_GLOBAL;
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *python_get_sym(python_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void python_free_lib(python_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *python_lib_error(void) { return dlerror(); }
+  #define PYTHON_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t py_handle_lib = NULL;
-static int init_state = 0;          /* 0=未初始化, 1=已加载, -1=加载失败 */
+static python_lib_handle_t py_handle_lib = NULL;
+static int python_init_state = 0;          /* 0=未初始化, 1=已加载, -1=加载失败 */
 static int py_major = 0;
 static int py_minor = 0;
 static char py_version_str[256];
 static int py_unicode_kind = 0;     /* 2=UCS2, 4=UCS4, 1=普通符号, 0=非2/未知 */
-static int want_major = 0;          /* 0=自动（优先3）, 2, 3 */
-static int want_minor = -1;         /* -1=最新 */
-static int want_loaded = 0;
+static int python_want_major = 0;          /* 0=自动（优先3）, 2, 3 */
+static int python_want_minor = -1;         /* -1=最新 */
+static int python_want_loaded = 0;
 
-#define MAX_CANDIDATES 384
-#define PATH_BUF_LEN   1024
+#define PYTHON_MAX_CANDIDATES 384
+#define PYTHON_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 候选路径工具
  * ============================================================ */
-static int push_candidate(const char **candidates,
-                          char bufs[][PATH_BUF_LEN],
+static int python_push_candidate(const char **candidates,
+                          char bufs[][PYTHON_PATH_BUF_LEN],
                           int n, const char *path) {
-    if (n >= MAX_CANDIDATES - 1) return n;
-    snprintf(bufs[n], PATH_BUF_LEN, "%s", path);
+    if (n >= PYTHON_MAX_CANDIDATES - 1) return n;
+    snprintf(bufs[n], PYTHON_PATH_BUF_LEN, "%s", path);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static int push_candidate_fmt(const char **candidates,
-                              char bufs[][PATH_BUF_LEN],
+static int python_push_candidate_fmt(const char **candidates,
+                              char bufs[][PYTHON_PATH_BUF_LEN],
                               int n, const char *fmt, ...) {
     va_list ap;
-    if (n >= MAX_CANDIDATES - 1) return n;
+    if (n >= PYTHON_MAX_CANDIDATES - 1) return n;
     va_start(ap, fmt);
-    vsnprintf(bufs[n], PATH_BUF_LEN, fmt, ap);
+    vsnprintf(bufs[n], PYTHON_PATH_BUF_LEN, fmt, ap);
     va_end(ap);
     candidates[n] = bufs[n];
     return n + 1;
 }
 
-static char *dup_string(const char *s) {
+static char *python_dup_string(const char *s) {
     size_t len = strlen(s) + 1;
     char *p = (char *)malloc(len);
     if (p) memcpy(p, s, len);
@@ -178,117 +178,117 @@ static char *dup_n(const char *s, size_t n) {
 /* ============================================================
  * 版本选择
  * ============================================================ */
-static void load_want_from_env(void) {
+static void python_load_want_from_env(void) {
     const char *v;
     int maj = 0, min = -1;
-    if (want_loaded) return;
-    want_loaded = 1;
+    if (python_want_loaded) return;
+    python_want_loaded = 1;
     v = getenv("PYTHON_DYN_VER");
     if (!v || !*v) return;
     if (sscanf(v, "%d.%d", &maj, &min) < 1) return;
     if (maj != 2 && maj != 3) return;
-    want_major = maj;
-    want_minor = (min >= 0) ? min : -1;
+    python_want_major = maj;
+    python_want_minor = (min >= 0) ? min : -1;
 }
 
 /* 生成默认的 Python 3 次版本候选（裸库名） */
 static int push_py3_bare(const char **candidates,
-                         char bufs[][PATH_BUF_LEN], int n) {
-    int lo = (want_minor >= 0) ? want_minor : 6;
-    int hi = (want_minor >= 0) ? want_minor : 15;
+                         char bufs[][PYTHON_PATH_BUF_LEN], int n) {
+    int lo = (python_want_minor >= 0) ? python_want_minor : 6;
+    int hi = (python_want_minor >= 0) ? python_want_minor : 15;
     int v;
     for (v = hi; v >= lo; --v) {
 #ifdef _WIN32
-        n = push_candidate_fmt(candidates, bufs, n, "python3%d.dll", v);
+        n = python_push_candidate_fmt(candidates, bufs, n, "python3%d.dll", v);
         if (v >= 13)
-            n = push_candidate_fmt(candidates, bufs, n, "python3%dt.dll", v);
+            n = python_push_candidate_fmt(candidates, bufs, n, "python3%dt.dll", v);
 #elif defined(__APPLE__)
-        n = push_candidate_fmt(candidates, bufs, n, "libpython3.%d.dylib", v);
+        n = python_push_candidate_fmt(candidates, bufs, n, "libpython3.%d.dylib", v);
         if (v <= 7)
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "libpython3.%dm.dylib", v);
         if (v >= 13)
-            n = push_candidate_fmt(candidates, bufs, n, "libpython3.%dt.dylib", v);
+            n = python_push_candidate_fmt(candidates, bufs, n, "libpython3.%dt.dylib", v);
 #else
-        n = push_candidate_fmt(candidates, bufs, n, "libpython3.%d.so.1.0", v);
-        n = push_candidate_fmt(candidates, bufs, n, "libpython3.%d.so", v);
+        n = python_push_candidate_fmt(candidates, bufs, n, "libpython3.%d.so.1.0", v);
+        n = python_push_candidate_fmt(candidates, bufs, n, "libpython3.%d.so", v);
         if (v <= 7) {
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "libpython3.%dm.so.1.0", v);
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "libpython3.%dm.so", v);
         }
         if (v >= 13)
-            n = push_candidate_fmt(candidates, bufs, n, "libpython3.%dt.so.1.0", v);
+            n = python_push_candidate_fmt(candidates, bufs, n, "libpython3.%dt.so.1.0", v);
 #endif
     }
     return n;
 }
 
 static int push_py2_bare(const char **candidates,
-                         char bufs[][PATH_BUF_LEN], int n) {
-    if (want_minor >= 0 && want_minor != 7) return n;
+                         char bufs[][PYTHON_PATH_BUF_LEN], int n) {
+    if (python_want_minor >= 0 && python_want_minor != 7) return n;
 #ifdef _WIN32
-    n = push_candidate(candidates, bufs, n, "python27.dll");
+    n = python_push_candidate(candidates, bufs, n, "python27.dll");
 #elif defined(__APPLE__)
-    n = push_candidate(candidates, bufs, n, "libpython2.7.dylib");
+    n = python_push_candidate(candidates, bufs, n, "libpython2.7.dylib");
 #else
-    n = push_candidate(candidates, bufs, n, "libpython2.7.so.1.0");
-    n = push_candidate(candidates, bufs, n, "libpython2.7.so");
+    n = python_push_candidate(candidates, bufs, n, "libpython2.7.so.1.0");
+    n = python_push_candidate(candidates, bufs, n, "libpython2.7.so");
 #endif
     return n;
 }
 
 /* 某个目录下的通用库名（与版本无关） */
 static int push_dir_generic(const char **candidates,
-                            char bufs[][PATH_BUF_LEN], int n,
+                            char bufs[][PYTHON_PATH_BUF_LEN], int n,
                             const char *dir) {
 #ifdef _WIN32
-    if (want_major == 0 || want_major == 3)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/python3.dll", dir);
-    if (want_major == 0 || want_major == 2)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/python27.dll", dir);
+    if (python_want_major == 0 || python_want_major == 3)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/python3.dll", dir);
+    if (python_want_major == 0 || python_want_major == 2)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/python27.dll", dir);
 #elif defined(__APPLE__)
-    if (want_major == 0 || want_major == 3)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/libpython3.dylib", dir);
-    if (want_major == 0 || want_major == 2)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/libpython2.7.dylib", dir);
+    if (python_want_major == 0 || python_want_major == 3)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/libpython3.dylib", dir);
+    if (python_want_major == 0 || python_want_major == 2)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/libpython2.7.dylib", dir);
 #else
-    if (want_major == 0 || want_major == 3)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/libpython3.so", dir);
-    if (want_major == 0 || want_major == 2)
-        n = push_candidate_fmt(candidates, bufs, n, "%s/libpython2.7.so", dir);
+    if (python_want_major == 0 || python_want_major == 3)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/libpython3.so", dir);
+    if (python_want_major == 0 || python_want_major == 2)
+        n = python_push_candidate_fmt(candidates, bufs, n, "%s/libpython2.7.so", dir);
 #endif
     return n;
 }
 
 /* 某个目录下的版本化库名 */
 static int push_dir_versions(const char **candidates,
-                             char bufs[][PATH_BUF_LEN], int n,
+                             char bufs[][PYTHON_PATH_BUF_LEN], int n,
                              const char *dir) {
-    int lo = (want_minor >= 0) ? want_minor : 6;
-    int hi = (want_minor >= 0) ? want_minor : 15;
+    int lo = (python_want_minor >= 0) ? python_want_minor : 6;
+    int hi = (python_want_minor >= 0) ? python_want_minor : 15;
     int v;
-    if (want_major == 0 || want_major == 3) {
+    if (python_want_major == 0 || python_want_major == 3) {
         for (v = hi; v >= lo; --v) {
 #ifdef _WIN32
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "%s/python3%d.dll", dir, v);
 #elif defined(__APPLE__)
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "%s/libpython3.%d.dylib", dir, v);
             if (v <= 7)
-                n = push_candidate_fmt(candidates, bufs, n,
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "%s/libpython3.%dm.dylib", dir, v);
 #else
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "%s/libpython3.%d.so.1.0", dir, v);
-            n = push_candidate_fmt(candidates, bufs, n,
+            n = python_push_candidate_fmt(candidates, bufs, n,
                                    "%s/libpython3.%d.so", dir, v);
             if (v <= 7) {
-                n = push_candidate_fmt(candidates, bufs, n,
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "%s/libpython3.%dm.so.1.0", dir, v);
-                n = push_candidate_fmt(candidates, bufs, n,
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "%s/libpython3.%dm.so", dir, v);
             }
 #endif
@@ -303,48 +303,48 @@ static int push_dir_versions(const char **candidates,
 static void detect_unicode_kind(void) {
     py_unicode_kind = 0;
     if (py_major != 2) return;
-    if (get_sym(py_handle_lib, "PyUnicodeUCS4_DecodeUTF8"))
+    if (python_get_sym(py_handle_lib, "PyUnicodeUCS4_DecodeUTF8"))
         py_unicode_kind = 4;
-    else if (get_sym(py_handle_lib, "PyUnicodeUCS2_DecodeUTF8"))
+    else if (python_get_sym(py_handle_lib, "PyUnicodeUCS2_DecodeUTF8"))
         py_unicode_kind = 2;
-    else if (get_sym(py_handle_lib, "PyUnicode_DecodeUTF8"))
+    else if (python_get_sym(py_handle_lib, "PyUnicode_DecodeUTF8"))
         py_unicode_kind = 1;
 }
 
-static int try_candidate(const char *path, int idx) {
-    lib_handle_t h;
+static int python_try_candidate(const char *path, int idx) {
+    python_lib_handle_t h;
     void *sym_init;
     void *sym_version;
     const char *(*fn_version)(void) = NULL;
     const char *ver;
     int maj = 0, min = 0;
 
-    h = load_lib(path);
+    h = python_load_lib(path);
     if (!h) return -1;
 
-    sym_init = get_sym(h, "Py_Initialize");
-    sym_version = get_sym(h, "Py_GetVersion");
+    sym_init = python_get_sym(h, "Py_Initialize");
+    sym_version = python_get_sym(h, "Py_GetVersion");
     if (!sym_init || !sym_version) {
-        free_lib(h);
+        python_free_lib(h);
         return -1;
     }
 
     *(void **)(&fn_version) = sym_version;
     ver = fn_version();
     if (!ver || sscanf(ver, "%d.%d", &maj, &min) < 2) {
-        free_lib(h);
+        python_free_lib(h);
         return -1;
     }
     if (maj != 2 && maj != 3) {
-        free_lib(h);
+        python_free_lib(h);
         return -1;
     }
-    if (want_major != 0 && maj != want_major) {
-        free_lib(h);
+    if (python_want_major != 0 && maj != python_want_major) {
+        python_free_lib(h);
         return -1;
     }
-    if (want_minor >= 0 && min != want_minor) {
-        free_lib(h);
+    if (python_want_minor >= 0 && min != python_want_minor) {
+        python_free_lib(h);
         return -1;
     }
 
@@ -360,25 +360,25 @@ static int try_candidate(const char *path, int idx) {
 /* ============================================================
  * 库加载
  * ============================================================ */
-static int do_load(const char *library_path) {
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+static int python_do_load(const char *library_path) {
+    static char bufs[PYTHON_MAX_CANDIDATES][PYTHON_PATH_BUF_LEN];
+    const char *candidates[PYTHON_MAX_CANDIDATES];
     int n = 0;
     int i;
     const char *env_path;
 
     if (py_handle_lib) return 0;
-    load_want_from_env();
+    python_load_want_from_env();
 
     /* 1. 显式传入的路径 */
     if (library_path && *library_path)
-        n = push_candidate(candidates, bufs, n, library_path);
+        n = python_push_candidate(candidates, bufs, n, library_path);
 
     /* 2. 项目专属环境变量 */
     {
         const char *explicit_lib = getenv("PYTHON_DYN_LIB");
         if (explicit_lib && *explicit_lib)
-            n = push_candidate(candidates, bufs, n, explicit_lib);
+            n = python_push_candidate(candidates, bufs, n, explicit_lib);
     }
 
     /* 3. 系统搜索路径环境变量中的目录 */
@@ -392,15 +392,15 @@ static int do_load(const char *library_path) {
 #endif
     );
     if (env_path && *env_path) {
-        char *copy = dup_string(env_path);
+        char *copy = python_dup_string(env_path);
         if (copy) {
             char *p = copy;
             while (p && *p) {
-                char *sep = strchr(p, PATH_SEP);
+                char *sep = strchr(p, PYTHON_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
                     n = push_dir_generic(candidates, bufs, n, p);
-                    if (want_minor >= 0 && (want_major == 0 || want_major == 3))
+                    if (python_want_minor >= 0 && (python_want_major == 0 || python_want_major == 3))
                         n = push_dir_versions(candidates, bufs, n, p);
                 }
                 p = sep ? sep + 1 : NULL;
@@ -410,26 +410,26 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 裸库名（交给系统链接器搜索） */
-    if (want_major == 0 || want_major == 3) {
+    if (python_want_major == 0 || python_want_major == 3) {
         n = push_py3_bare(candidates, bufs, n);
-        if (want_minor < 0) {
+        if (python_want_minor < 0) {
 #ifdef _WIN32
-            n = push_candidate(candidates, bufs, n, "python3.dll");
+            n = python_push_candidate(candidates, bufs, n, "python3.dll");
 #elif defined(__APPLE__)
-            n = push_candidate(candidates, bufs, n, "libpython3.dylib");
+            n = python_push_candidate(candidates, bufs, n, "libpython3.dylib");
 #else
-            n = push_candidate(candidates, bufs, n, "libpython3.so");
+            n = python_push_candidate(candidates, bufs, n, "libpython3.so");
 #endif
         }
     }
-    if (want_major == 0 || want_major == 2)
+    if (python_want_major == 0 || python_want_major == 2)
         n = push_py2_bare(candidates, bufs, n);
 
     /* 5. Nix profile */
 #ifndef _WIN32
     {
         const char *home = getenv("HOME");
-        char dir[PATH_BUF_LEN];
+        char dir[PYTHON_PATH_BUF_LEN];
         if (home && *home) {
             snprintf(dir, sizeof(dir), "%s/.nix-profile/lib", home);
             n = push_dir_generic(candidates, bufs, n, dir);
@@ -454,37 +454,37 @@ static int do_load(const char *library_path) {
             "/Library/Frameworks/Python.framework/Versions",
             "/opt/homebrew/Frameworks/Python.framework/Versions"
         };
-        int lo = (want_minor >= 0) ? want_minor : 6;
-        int hi = (want_minor >= 0) ? want_minor : 15;
+        int lo = (python_want_minor >= 0) ? python_want_minor : 6;
+        int hi = (python_want_minor >= 0) ? python_want_minor : 15;
         int v;
 
         for (i = 0; i < (int)(sizeof(libdirs) / sizeof(libdirs[0])); i++) {
             n = push_dir_generic(candidates, bufs, n, libdirs[i]);
             n = push_dir_versions(candidates, bufs, n, libdirs[i]);
         }
-        if (want_major == 0 || want_major == 3) {
+        if (python_want_major == 0 || python_want_major == 3) {
             for (v = hi; v >= lo; --v)
-                n = push_candidate_fmt(candidates, bufs, n,
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "/opt/homebrew/opt/python@3.%d/lib/"
                                        "libpython3.%d.dylib", v, v);
         }
         for (i = 0; i < (int)(sizeof(fwroots) / sizeof(fwroots[0])); i++) {
-            if (want_major == 0 || want_major == 3) {
+            if (python_want_major == 0 || python_want_major == 3) {
                 for (v = hi; v >= lo; --v)
-                    n = push_candidate_fmt(candidates, bufs, n,
+                    n = python_push_candidate_fmt(candidates, bufs, n,
                                            "%s/3.%d/Python", fwroots[i], v);
-                n = push_candidate_fmt(candidates, bufs, n,
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "%s/Current/Python", fwroots[i]);
             }
-            if (want_major == 0 || want_major == 2)
-                n = push_candidate_fmt(candidates, bufs, n,
+            if (python_want_major == 0 || python_want_major == 2)
+                n = python_push_candidate_fmt(candidates, bufs, n,
                                        "%s/2.7/Python", fwroots[i]);
         }
-        if (want_major == 0 || want_major == 2) {
-            n = push_candidate(candidates, bufs, n,
+        if (python_want_major == 0 || python_want_major == 2) {
+            n = python_push_candidate(candidates, bufs, n,
                                "/System/Library/Frameworks/Python.framework/"
                                "Versions/2.7/Python");
-            n = push_candidate(candidates, bufs, n,
+            n = python_push_candidate(candidates, bufs, n,
                                "/System/Library/Frameworks/Python.framework/"
                                "Versions/Current/Python");
         }
@@ -505,7 +505,7 @@ static int do_load(const char *library_path) {
         {
             const char *prefix = getenv("PREFIX"); /* Termux */
             if (prefix && *prefix) {
-                char dir[PATH_BUF_LEN];
+                char dir[PYTHON_PATH_BUF_LEN];
                 snprintf(dir, sizeof(dir), "%s/lib", prefix);
                 n = push_dir_generic(candidates, bufs, n, dir);
                 n = push_dir_versions(candidates, bufs, n, dir);
@@ -527,12 +527,12 @@ static int do_load(const char *library_path) {
     candidates[n] = NULL;
 
     for (i = 0; i < n; i++) {
-        if (try_candidate(candidates[i], i) == 0)
+        if (python_try_candidate(candidates[i], i) == 0)
             return 0;
     }
 
     {
-        const char *err = lib_error();
+        const char *err = python_lib_error();
         fprintf(stderr, "python_dyn: cannot load libpython (%s)\n",
                 err ? err : "unknown error");
     }
@@ -543,39 +543,39 @@ static int do_load(const char *library_path) {
  * 控制函数
  * ============================================================ */
 int python_libok(void) {
-    if (init_state == 0)
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
-    return (init_state == 1 && py_handle_lib != NULL) ? 1 : 0;
+    if (python_init_state == 0)
+        python_init_state = (python_do_load(NULL) == 0) ? 1 : -1;
+    return (python_init_state == 1 && py_handle_lib != NULL) ? 1 : 0;
 }
 
 int python_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (python_init_state == 1) return 0;
+    if (python_init_state == -1) return -1;
+    if (python_do_load(library_path) == 0) {
+        python_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    python_init_state = -1;
     return -1;
 }
 
 int python_dyn_init_version(int major, int minor) {
     if (major != 2 && major != 3) return -1;
     if (major == 2 && minor >= 0 && minor != 7) return -1; /* 仅支持 2.7 */
-    if (init_state == 1) {
+    if (python_init_state == 1) {
         if (py_major == major && (minor < 0 || py_minor == minor))
             return 0;
         return -1;
     }
-    if (init_state == -1) init_state = 0;
-    want_major = major;
-    want_minor = minor;
-    want_loaded = 1;
-    if (do_load(NULL) == 0) {
-        init_state = 1;
+    if (python_init_state == -1) python_init_state = 0;
+    python_want_major = major;
+    python_want_minor = minor;
+    python_want_loaded = 1;
+    if (python_do_load(NULL) == 0) {
+        python_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    python_init_state = -1;
     return -1;
 }
 
@@ -586,39 +586,39 @@ int python_dyn_init_version(int major, int minor) {
  *   - 只有加载失败状态才复位为 0，允许修正版本/路径后重试。
  */
 void python_dyn_cleanup(void) {
-    if (init_state == -1)
-        init_state = 0;
+    if (python_init_state == -1)
+        python_init_state = 0;
 }
 
 int python_dyn_major(void) {
-    if (init_state == 0) python_libok();
+    if (python_init_state == 0) python_libok();
     return py_major;
 }
 
 int python_dyn_minor(void) {
-    if (init_state == 0) python_libok();
+    if (python_init_state == 0) python_libok();
     return py_minor;
 }
 
 const char *python_dyn_version(void) {
-    if (init_state == 0) python_libok();
+    if (python_init_state == 0) python_libok();
     return py_version_str;
 }
 
 int python_dyn_unicode_kind(void) {
-    if (init_state == 0) python_libok();
+    if (python_init_state == 0) python_libok();
     return py_unicode_kind;
 }
 
 /* ============================================================
  * 通用按需解析宏
  * ============================================================ */
-#define WRAP_RET(ret, name, params, args, fallback)                \
+#define PYTHON_WRAP_RET(ret, name, params, args, fallback)                \
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
         if (!python_libok()) return fallback;                      \
-        *(void **)(&fn) = get_sym(py_handle_lib, #name);           \
+        *(void **)(&fn) = python_get_sym(py_handle_lib, #name);           \
         if (!fn) {                                                 \
             fprintf(stderr, "python_dyn: dlsym failed: %s\n",      \
                     #name);                                        \
@@ -628,12 +628,12 @@ ret name params {                                                  \
     return fn args;                                                \
 }
 
-#define WRAP_VOID(name, params, args)                              \
+#define PYTHON_WRAP_VOID(name, params, args)                              \
 void name params {                                                 \
     static void (*fn) params = NULL;                               \
     if (!fn) {                                                     \
         if (!python_libok()) return;                               \
-        *(void **)(&fn) = get_sym(py_handle_lib, #name);           \
+        *(void **)(&fn) = python_get_sym(py_handle_lib, #name);           \
         if (!fn) {                                                 \
             fprintf(stderr, "python_dyn: dlsym failed: %s\n",      \
                     #name);                                        \
@@ -646,70 +646,70 @@ void name params {                                                 \
 /* ============================================================
  * 初始化、执行、导入
  * ============================================================ */
-WRAP_VOID(Py_Initialize, (void), ())
-WRAP_VOID(Py_InitializeEx, (int initsigs), (initsigs))
-WRAP_VOID(Py_Finalize, (void), ())
-WRAP_RET(int, Py_FinalizeEx, (void), (), -1)
-WRAP_RET(int, Py_IsInitialized, (void), (), 0)
-WRAP_RET(const char *, Py_GetVersion, (void), (), NULL)
-WRAP_RET(const char *, Py_GetPlatform, (void), (), NULL)
+PYTHON_WRAP_VOID(Py_Initialize, (void), ())
+PYTHON_WRAP_VOID(Py_InitializeEx, (int initsigs), (initsigs))
+PYTHON_WRAP_VOID(Py_Finalize, (void), ())
+PYTHON_WRAP_RET(int, Py_FinalizeEx, (void), (), -1)
+PYTHON_WRAP_RET(int, Py_IsInitialized, (void), (), 0)
+PYTHON_WRAP_RET(const char *, Py_GetVersion, (void), (), NULL)
+PYTHON_WRAP_RET(const char *, Py_GetPlatform, (void), (), NULL)
 
-WRAP_RET(int, PyRun_SimpleString, (const char *s), (s), -1)
-WRAP_RET(PyObject *, PyRun_String,
+PYTHON_WRAP_RET(int, PyRun_SimpleString, (const char *s), (s), -1)
+PYTHON_WRAP_RET(PyObject *, PyRun_String,
          (const char *s, int start, PyObject *globals, PyObject *locals),
          (s, start, globals, locals), NULL)
-WRAP_RET(PyObject *, PyImport_ImportModule, (const char *name), (name), NULL)
-WRAP_RET(PyObject *, PyImport_AddModule, (const char *name), (name), NULL)
-WRAP_RET(PyObject *, PyImport_GetModuleDict, (void), (), NULL)
+PYTHON_WRAP_RET(PyObject *, PyImport_ImportModule, (const char *name), (name), NULL)
+PYTHON_WRAP_RET(PyObject *, PyImport_AddModule, (const char *name), (name), NULL)
+PYTHON_WRAP_RET(PyObject *, PyImport_GetModuleDict, (void), (), NULL)
 
-WRAP_RET(PyObject *, PyEval_GetBuiltins, (void), (), NULL)
-WRAP_RET(PyObject *, PyEval_GetGlobals, (void), (), NULL)
-WRAP_RET(PyObject *, PyEval_GetLocals, (void), (), NULL)
+PYTHON_WRAP_RET(PyObject *, PyEval_GetBuiltins, (void), (), NULL)
+PYTHON_WRAP_RET(PyObject *, PyEval_GetGlobals, (void), (), NULL)
+PYTHON_WRAP_RET(PyObject *, PyEval_GetLocals, (void), (), NULL)
 
 /* ============================================================
  * 对象、属性、调用
  * ============================================================ */
-WRAP_RET(PyObject *, PyObject_GetAttrString,
+PYTHON_WRAP_RET(PyObject *, PyObject_GetAttrString,
          (PyObject *o, const char *name), (o, name), NULL)
-WRAP_RET(int, PyObject_SetAttrString,
+PYTHON_WRAP_RET(int, PyObject_SetAttrString,
          (PyObject *o, const char *name, PyObject *v), (o, name, v), -1)
-WRAP_RET(int, PyObject_HasAttrString,
+PYTHON_WRAP_RET(int, PyObject_HasAttrString,
          (PyObject *o, const char *name), (o, name), 0)
 
-WRAP_RET(PyObject *, PyObject_Call,
+PYTHON_WRAP_RET(PyObject *, PyObject_Call,
          (PyObject *callable, PyObject *args, PyObject *kwargs),
          (callable, args, kwargs), NULL)
-WRAP_RET(PyObject *, PyObject_CallObject,
+PYTHON_WRAP_RET(PyObject *, PyObject_CallObject,
          (PyObject *callable, PyObject *args), (callable, args), NULL)
-WRAP_RET(PyObject *, PyObject_Str, (PyObject *o), (o), NULL)
-WRAP_RET(PyObject *, PyObject_Repr, (PyObject *o), (o), NULL)
-WRAP_RET(PyObject *, PyObject_GetIter, (PyObject *o), (o), NULL)
-WRAP_RET(PyObject *, PyIter_Next, (PyObject *iter), (iter), NULL)
+PYTHON_WRAP_RET(PyObject *, PyObject_Str, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyObject_Repr, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyObject_GetIter, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyIter_Next, (PyObject *iter), (iter), NULL)
 
-WRAP_RET(int, PyObject_IsTrue, (PyObject *o), (o), -1)
-WRAP_RET(int, PyObject_Not, (PyObject *o), (o), -1)
-WRAP_RET(Py_ssize_t, PyObject_Length, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyObject_GetItem, (PyObject *o, PyObject *key),
+PYTHON_WRAP_RET(int, PyObject_IsTrue, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(int, PyObject_Not, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(Py_ssize_t, PyObject_Length, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyObject_GetItem, (PyObject *o, PyObject *key),
          (o, key), NULL)
-WRAP_RET(int, PyObject_SetItem,
+PYTHON_WRAP_RET(int, PyObject_SetItem,
          (PyObject *o, PyObject *key, PyObject *v), (o, key, v), -1)
-WRAP_RET(int, PyObject_DelItem, (PyObject *o, PyObject *key), (o, key), -1)
+PYTHON_WRAP_RET(int, PyObject_DelItem, (PyObject *o, PyObject *key), (o, key), -1)
 
-WRAP_RET(PyObject *, PyObject_Type, (PyObject *o), (o), NULL)
-WRAP_RET(int, PyObject_IsInstance, (PyObject *o, PyObject *cls), (o, cls), -1)
-WRAP_RET(int, PyObject_IsSubclass, (PyObject *o, PyObject *cls), (o, cls), -1)
-WRAP_RET(PyObject *, PyObject_RichCompare,
+PYTHON_WRAP_RET(PyObject *, PyObject_Type, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(int, PyObject_IsInstance, (PyObject *o, PyObject *cls), (o, cls), -1)
+PYTHON_WRAP_RET(int, PyObject_IsSubclass, (PyObject *o, PyObject *cls), (o, cls), -1)
+PYTHON_WRAP_RET(PyObject *, PyObject_RichCompare,
          (PyObject *a, PyObject *b, int op), (a, b, op), NULL)
-WRAP_RET(int, PyObject_RichCompareBool,
+PYTHON_WRAP_RET(int, PyObject_RichCompareBool,
          (PyObject *a, PyObject *b, int op), (a, b, op), -1)
-WRAP_RET(PyObject *, PyObject_Dir, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyObject_Dir, (PyObject *o), (o), NULL)
 
 /* PyObject_DelAttrString 在 Python 2.7 是宏，没有导出符号 */
 int PyObject_DelAttrString(PyObject *o, const char *name) {
     static int (*fn)(PyObject *, const char *) = NULL;
     if (!fn) {
         if (!python_libok()) return -1;
-        *(void **)(&fn) = get_sym(py_handle_lib, "PyObject_DelAttrString");
+        *(void **)(&fn) = python_get_sym(py_handle_lib, "PyObject_DelAttrString");
     }
     if (fn) return fn(o, name);
     return PyObject_SetAttrString(o, name, NULL);
@@ -722,7 +722,7 @@ Py_ssize_t PyObject_Hash(PyObject *o) {
         static long (*fn2)(PyObject *) = NULL;
         if (!fn2) {
             if (!python_libok()) return -1;
-            *(void **)(&fn2) = get_sym(py_handle_lib, "PyObject_Hash");
+            *(void **)(&fn2) = python_get_sym(py_handle_lib, "PyObject_Hash");
             if (!fn2) {
                 fprintf(stderr, "python_dyn: dlsym failed: PyObject_Hash\n");
                 return -1;
@@ -733,7 +733,7 @@ Py_ssize_t PyObject_Hash(PyObject *o) {
         static Py_ssize_t (*fn3)(PyObject *) = NULL;
         if (!fn3) {
             if (!python_libok()) return -1;
-            *(void **)(&fn3) = get_sym(py_handle_lib, "PyObject_Hash");
+            *(void **)(&fn3) = python_get_sym(py_handle_lib, "PyObject_Hash");
             if (!fn3) {
                 fprintf(stderr, "python_dyn: dlsym failed: PyObject_Hash\n");
                 return -1;
@@ -746,39 +746,39 @@ Py_ssize_t PyObject_Hash(PyObject *o) {
 /* ============================================================
  * 数值
  * ============================================================ */
-WRAP_RET(PyObject *, PyLong_FromLong, (long v), (v), NULL)
-WRAP_RET(long, PyLong_AsLong, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyLong_FromLongLong, (long long v), (v), NULL)
-WRAP_RET(long long, PyLong_AsLongLong, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyLong_FromString,
+PYTHON_WRAP_RET(PyObject *, PyLong_FromLong, (long v), (v), NULL)
+PYTHON_WRAP_RET(long, PyLong_AsLong, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyLong_FromLongLong, (long long v), (v), NULL)
+PYTHON_WRAP_RET(long long, PyLong_AsLongLong, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyLong_FromString,
          (const char *s, char **end, int base), (s, end, base), NULL)
-WRAP_RET(PyObject *, PyFloat_FromDouble, (double v), (v), NULL)
-WRAP_RET(double, PyFloat_AsDouble, (PyObject *o), (o), -1.0)
-WRAP_RET(PyObject *, PyBool_FromLong, (long v), (v), NULL)
+PYTHON_WRAP_RET(PyObject *, PyFloat_FromDouble, (double v), (v), NULL)
+PYTHON_WRAP_RET(double, PyFloat_AsDouble, (PyObject *o), (o), -1.0)
+PYTHON_WRAP_RET(PyObject *, PyBool_FromLong, (long v), (v), NULL)
 
 /* ============================================================
  * 字符串：Python 2.7 专属
  * ============================================================ */
-WRAP_RET(PyObject *, PyString_FromString, (const char *s), (s), NULL)
-WRAP_RET(PyObject *, PyString_FromStringAndSize,
+PYTHON_WRAP_RET(PyObject *, PyString_FromString, (const char *s), (s), NULL)
+PYTHON_WRAP_RET(PyObject *, PyString_FromStringAndSize,
          (const char *s, Py_ssize_t n), (s, n), NULL)
-WRAP_RET(char *, PyString_AsString, (PyObject *o), (o), NULL)
-WRAP_RET(int, PyString_AsStringAndSize,
+PYTHON_WRAP_RET(char *, PyString_AsString, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(int, PyString_AsStringAndSize,
          (PyObject *o, char **buf, Py_ssize_t *len), (o, buf, len), -1)
-WRAP_RET(Py_ssize_t, PyString_Size, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyInt_FromLong, (long v), (v), NULL)
-WRAP_RET(long, PyInt_AsLong, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(Py_ssize_t, PyString_Size, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyInt_FromLong, (long v), (v), NULL)
+PYTHON_WRAP_RET(long, PyInt_AsLong, (PyObject *o), (o), -1)
 
 /* ============================================================
  * 字符串：Python 3.x 专属
  * ============================================================ */
-WRAP_RET(PyObject *, PyBytes_FromString, (const char *s), (s), NULL)
-WRAP_RET(PyObject *, PyBytes_FromStringAndSize,
+PYTHON_WRAP_RET(PyObject *, PyBytes_FromString, (const char *s), (s), NULL)
+PYTHON_WRAP_RET(PyObject *, PyBytes_FromStringAndSize,
          (const char *s, Py_ssize_t n), (s, n), NULL)
-WRAP_RET(char *, PyBytes_AsString, (PyObject *o), (o), NULL)
-WRAP_RET(int, PyBytes_AsStringAndSize,
+PYTHON_WRAP_RET(char *, PyBytes_AsString, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(int, PyBytes_AsStringAndSize,
          (PyObject *o, char **buf, Py_ssize_t *len), (o, buf, len), -1)
-WRAP_RET(Py_ssize_t, PyBytes_Size, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(Py_ssize_t, PyBytes_Size, (PyObject *o), (o), -1)
 
 /* ============================================================
  * Unicode：2.7 需要 UCS2_/UCS4_ 前缀
@@ -795,10 +795,10 @@ static void *get_unicode_sym(const char *base) {
     } else {
         snprintf(name, sizeof(name), "PyUnicode_%s", base);
     }
-    return get_sym(py_handle_lib, name);
+    return python_get_sym(py_handle_lib, name);
 }
 
-#define WRAP_UNICODE_RET(ret, name, base, params, args, fallback)  \
+#define PYTHON_WRAP_UNICODE_RET(ret, name, base, params, args, fallback)  \
 ret name params {                                                  \
     static ret (*fn) params = NULL;                                \
     if (!fn) {                                                     \
@@ -813,116 +813,116 @@ ret name params {                                                  \
     return fn args;                                                \
 }
 
-WRAP_UNICODE_RET(PyObject *, PyUnicode_FromString, "FromString",
+PYTHON_WRAP_UNICODE_RET(PyObject *, PyUnicode_FromString, "FromString",
                  (const char *s), (s), NULL)
-WRAP_UNICODE_RET(PyObject *, PyUnicode_FromStringAndSize, "FromStringAndSize",
+PYTHON_WRAP_UNICODE_RET(PyObject *, PyUnicode_FromStringAndSize, "FromStringAndSize",
                  (const char *s, Py_ssize_t n), (s, n), NULL)
-WRAP_UNICODE_RET(PyObject *, PyUnicode_DecodeUTF8, "DecodeUTF8",
+PYTHON_WRAP_UNICODE_RET(PyObject *, PyUnicode_DecodeUTF8, "DecodeUTF8",
                  (const char *s, Py_ssize_t n, const char *errors),
                  (s, n, errors), NULL)
-WRAP_UNICODE_RET(PyObject *, PyUnicode_AsUTF8String, "AsUTF8String",
+PYTHON_WRAP_UNICODE_RET(PyObject *, PyUnicode_AsUTF8String, "AsUTF8String",
                  (PyObject *o), (o), NULL)
-WRAP_UNICODE_RET(PyObject *, PyUnicode_AsEncodedString, "AsEncodedString",
+PYTHON_WRAP_UNICODE_RET(PyObject *, PyUnicode_AsEncodedString, "AsEncodedString",
                  (PyObject *o, const char *enc, const char *errors),
                  (o, enc, errors), NULL)
-WRAP_UNICODE_RET(Py_ssize_t, PyUnicode_GetSize, "GetSize",
+PYTHON_WRAP_UNICODE_RET(Py_ssize_t, PyUnicode_GetSize, "GetSize",
                  (PyObject *o), (o), -1)
 
 /* 3.3+ 才有；2.7 调用会安全返回 NULL */
-WRAP_RET(const char *, PyUnicode_AsUTF8AndSize,
+PYTHON_WRAP_RET(const char *, PyUnicode_AsUTF8AndSize,
          (PyObject *o, Py_ssize_t *size), (o, size), NULL)
 
 /* ============================================================
  * 容器与模块
  * ============================================================ */
-WRAP_RET(PyObject *, PyTuple_New, (Py_ssize_t n), (n), NULL)
-WRAP_RET(Py_ssize_t, PyTuple_Size, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyTuple_GetItem, (PyObject *o, Py_ssize_t i), (o, i), NULL)
-WRAP_RET(int, PyTuple_SetItem,
+PYTHON_WRAP_RET(PyObject *, PyTuple_New, (Py_ssize_t n), (n), NULL)
+PYTHON_WRAP_RET(Py_ssize_t, PyTuple_Size, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyTuple_GetItem, (PyObject *o, Py_ssize_t i), (o, i), NULL)
+PYTHON_WRAP_RET(int, PyTuple_SetItem,
          (PyObject *o, Py_ssize_t i, PyObject *v), (o, i, v), -1)
 
-WRAP_RET(PyObject *, PyList_New, (Py_ssize_t n), (n), NULL)
-WRAP_RET(Py_ssize_t, PyList_Size, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyList_GetItem, (PyObject *o, Py_ssize_t i), (o, i), NULL)
-WRAP_RET(int, PyList_SetItem,
+PYTHON_WRAP_RET(PyObject *, PyList_New, (Py_ssize_t n), (n), NULL)
+PYTHON_WRAP_RET(Py_ssize_t, PyList_Size, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyList_GetItem, (PyObject *o, Py_ssize_t i), (o, i), NULL)
+PYTHON_WRAP_RET(int, PyList_SetItem,
          (PyObject *o, Py_ssize_t i, PyObject *v), (o, i, v), -1)
-WRAP_RET(int, PyList_Append, (PyObject *o, PyObject *v), (o, v), -1)
-WRAP_RET(int, PyList_Insert,
+PYTHON_WRAP_RET(int, PyList_Append, (PyObject *o, PyObject *v), (o, v), -1)
+PYTHON_WRAP_RET(int, PyList_Insert,
          (PyObject *o, Py_ssize_t i, PyObject *v), (o, i, v), -1)
-WRAP_RET(PyObject *, PyList_GetSlice,
+PYTHON_WRAP_RET(PyObject *, PyList_GetSlice,
          (PyObject *o, Py_ssize_t low, Py_ssize_t high), (o, low, high), NULL)
-WRAP_RET(int, PyList_SetSlice,
+PYTHON_WRAP_RET(int, PyList_SetSlice,
          (PyObject *o, Py_ssize_t low, Py_ssize_t high, PyObject *v),
          (o, low, high, v), -1)
-WRAP_RET(int, PyList_Sort, (PyObject *o), (o), -1)
-WRAP_RET(int, PyList_Reverse, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyList_AsTuple, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(int, PyList_Sort, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(int, PyList_Reverse, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyList_AsTuple, (PyObject *o), (o), NULL)
 
-WRAP_RET(PyObject *, PyDict_New, (void), (), NULL)
-WRAP_RET(Py_ssize_t, PyDict_Size, (PyObject *o), (o), -1)
-WRAP_RET(PyObject *, PyDict_GetItem, (PyObject *o, PyObject *key),
+PYTHON_WRAP_RET(PyObject *, PyDict_New, (void), (), NULL)
+PYTHON_WRAP_RET(Py_ssize_t, PyDict_Size, (PyObject *o), (o), -1)
+PYTHON_WRAP_RET(PyObject *, PyDict_GetItem, (PyObject *o, PyObject *key),
          (o, key), NULL)
-WRAP_RET(PyObject *, PyDict_GetItemString, (PyObject *o, const char *key),
+PYTHON_WRAP_RET(PyObject *, PyDict_GetItemString, (PyObject *o, const char *key),
          (o, key), NULL)
-WRAP_RET(int, PyDict_SetItem,
+PYTHON_WRAP_RET(int, PyDict_SetItem,
          (PyObject *o, PyObject *key, PyObject *v), (o, key, v), -1)
-WRAP_RET(int, PyDict_SetItemString,
+PYTHON_WRAP_RET(int, PyDict_SetItemString,
          (PyObject *o, const char *key, PyObject *v), (o, key, v), -1)
-WRAP_RET(int, PyDict_DelItem, (PyObject *o, PyObject *key), (o, key), -1)
-WRAP_RET(int, PyDict_DelItemString, (PyObject *o, const char *key),
+PYTHON_WRAP_RET(int, PyDict_DelItem, (PyObject *o, PyObject *key), (o, key), -1)
+PYTHON_WRAP_RET(int, PyDict_DelItemString, (PyObject *o, const char *key),
          (o, key), -1)
-WRAP_RET(int, PyDict_Contains, (PyObject *o, PyObject *key), (o, key), -1)
-WRAP_RET(int, PyDict_Next,
+PYTHON_WRAP_RET(int, PyDict_Contains, (PyObject *o, PyObject *key), (o, key), -1)
+PYTHON_WRAP_RET(int, PyDict_Next,
          (PyObject *o, Py_ssize_t *pos, PyObject **key, PyObject **value),
          (o, pos, key, value), 0)
-WRAP_RET(PyObject *, PyDict_Keys, (PyObject *o), (o), NULL)
-WRAP_RET(PyObject *, PyDict_Values, (PyObject *o), (o), NULL)
-WRAP_RET(PyObject *, PyDict_Items, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyDict_Keys, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyDict_Values, (PyObject *o), (o), NULL)
+PYTHON_WRAP_RET(PyObject *, PyDict_Items, (PyObject *o), (o), NULL)
 
-WRAP_RET(PyObject *, PySet_New, (PyObject *iterable), (iterable), NULL)
-WRAP_RET(int, PySet_Add, (PyObject *set, PyObject *key), (set, key), -1)
-WRAP_RET(int, PySet_Contains, (PyObject *set, PyObject *key), (set, key), -1)
-WRAP_RET(Py_ssize_t, PySet_Size, (PyObject *set), (set), -1)
-WRAP_RET(int, PySet_Discard, (PyObject *set, PyObject *key), (set, key), -1)
-WRAP_RET(PyObject *, PySet_Pop, (PyObject *set), (set), NULL)
-WRAP_RET(int, PySet_Clear, (PyObject *set), (set), -1)
+PYTHON_WRAP_RET(PyObject *, PySet_New, (PyObject *iterable), (iterable), NULL)
+PYTHON_WRAP_RET(int, PySet_Add, (PyObject *set, PyObject *key), (set, key), -1)
+PYTHON_WRAP_RET(int, PySet_Contains, (PyObject *set, PyObject *key), (set, key), -1)
+PYTHON_WRAP_RET(Py_ssize_t, PySet_Size, (PyObject *set), (set), -1)
+PYTHON_WRAP_RET(int, PySet_Discard, (PyObject *set, PyObject *key), (set, key), -1)
+PYTHON_WRAP_RET(PyObject *, PySet_Pop, (PyObject *set), (set), NULL)
+PYTHON_WRAP_RET(int, PySet_Clear, (PyObject *set), (set), -1)
 
-WRAP_RET(PyObject *, PySlice_New,
+PYTHON_WRAP_RET(PyObject *, PySlice_New,
          (PyObject *start, PyObject *stop, PyObject *step),
          (start, stop, step), NULL)
-WRAP_RET(int, PySlice_GetIndicesEx,
+PYTHON_WRAP_RET(int, PySlice_GetIndicesEx,
          (PyObject *slice, Py_ssize_t length,
           Py_ssize_t *start, Py_ssize_t *stop,
           Py_ssize_t *step, Py_ssize_t *slicelength),
          (slice, length, start, stop, step, slicelength), -1)
 
-WRAP_RET(PyObject *, PyModule_New, (const char *name), (name), NULL)
-WRAP_RET(PyObject *, PyModule_GetDict, (PyObject *module), (module), NULL)
-WRAP_RET(const char *, PyModule_GetName, (PyObject *module), (module), NULL)
-WRAP_RET(int, PyModule_AddObject,
+PYTHON_WRAP_RET(PyObject *, PyModule_New, (const char *name), (name), NULL)
+PYTHON_WRAP_RET(PyObject *, PyModule_GetDict, (PyObject *module), (module), NULL)
+PYTHON_WRAP_RET(const char *, PyModule_GetName, (PyObject *module), (module), NULL)
+PYTHON_WRAP_RET(int, PyModule_AddObject,
          (PyObject *module, const char *name, PyObject *value),
          (module, name, value), -1)
-WRAP_RET(int, PyModule_AddStringConstant,
+PYTHON_WRAP_RET(int, PyModule_AddStringConstant,
          (PyObject *module, const char *name, const char *value),
          (module, name, value), -1)
-WRAP_RET(int, PyModule_AddIntConstant,
+PYTHON_WRAP_RET(int, PyModule_AddIntConstant,
          (PyObject *module, const char *name, long value),
          (module, name, value), -1)
 
 /* ============================================================
  * 错误处理
  * ============================================================ */
-WRAP_RET(PyObject *, PyErr_Occurred, (void), (), NULL)
-WRAP_VOID(PyErr_Print, (void), ())
-WRAP_VOID(PyErr_Clear, (void), ())
-WRAP_VOID(PyErr_SetString, (PyObject *type, const char *msg), (type, msg))
-WRAP_VOID(PyErr_Fetch,
+PYTHON_WRAP_RET(PyObject *, PyErr_Occurred, (void), (), NULL)
+PYTHON_WRAP_VOID(PyErr_Print, (void), ())
+PYTHON_WRAP_VOID(PyErr_Clear, (void), ())
+PYTHON_WRAP_VOID(PyErr_SetString, (PyObject *type, const char *msg), (type, msg))
+PYTHON_WRAP_VOID(PyErr_Fetch,
           (PyObject **type, PyObject **value, PyObject **tb),
           (type, value, tb))
-WRAP_VOID(PyErr_Restore,
+PYTHON_WRAP_VOID(PyErr_Restore,
           (PyObject *type, PyObject *value, PyObject *tb),
           (type, value, tb))
-WRAP_VOID(PyErr_NormalizeException,
+PYTHON_WRAP_VOID(PyErr_NormalizeException,
           (PyObject **type, PyObject **value, PyObject **tb),
           (type, value, tb))
 
@@ -933,15 +933,15 @@ WRAP_VOID(PyErr_NormalizeException,
  * 库未加载时返回 PyGILState_UNLOCKED 只是安全默认值；调用方应先检查
  * python_libok()，不要在加载失败后继续执行 Python API。
  */
-WRAP_RET(PyGILState_STATE, PyGILState_Ensure, (void), (),
+PYTHON_WRAP_RET(PyGILState_STATE, PyGILState_Ensure, (void), (),
          PyGILState_UNLOCKED)
-WRAP_VOID(PyGILState_Release, (PyGILState_STATE state), (state))
-WRAP_RET(PyThreadState *, PyEval_SaveThread, (void), (), NULL)
-WRAP_VOID(PyEval_RestoreThread, (PyThreadState *ts), (ts))
-WRAP_VOID(PyEval_InitThreads, (void), ())
+PYTHON_WRAP_VOID(PyGILState_Release, (PyGILState_STATE state), (state))
+PYTHON_WRAP_RET(PyThreadState *, PyEval_SaveThread, (void), (), NULL)
+PYTHON_WRAP_VOID(PyEval_RestoreThread, (PyThreadState *ts), (ts))
+PYTHON_WRAP_VOID(PyEval_InitThreads, (void), ())
 
-WRAP_VOID(Py_IncRef, (PyObject *o), (o))
-WRAP_VOID(Py_DecRef, (PyObject *o), (o))
+PYTHON_WRAP_VOID(Py_IncRef, (PyObject *o), (o))
+PYTHON_WRAP_VOID(Py_DecRef, (PyObject *o), (o))
 
 void python_dyn_xincref(PyObject *o) {
     if (o) Py_IncRef(o);

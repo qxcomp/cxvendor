@@ -52,60 +52,60 @@ typedef uint32_t u_int32_t;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE bdb_lib_handle_t;
+  static bdb_lib_handle_t bdb_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *bdb_get_sym(bdb_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define PATH_SEP ';'
+  static void bdb_free_lib(bdb_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *bdb_lib_error(void) { return "LoadLibrary failed"; }
+  #define BDB_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *bdb_lib_handle_t;
+  static bdb_lib_handle_t bdb_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
-  #define PATH_SEP ':'
+  static void *bdb_get_sym(bdb_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void bdb_free_lib(bdb_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *bdb_lib_error(void) { return dlerror(); }
+  #define BDB_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t db_handle = NULL;
-static int init_state = 0;            /* 0=未初始化, 1=成功, -1=失败 */
+static bdb_lib_handle_t db_handle = NULL;
+static int bdb_init_state = 0;            /* 0=未初始化, 1=成功, -1=失败 */
 static int loaded_major_version = 0;  /* 4/5/6；0 表示未知 */
 
-#define MAX_CANDIDATES 80
-#define PATH_BUF_LEN   1024
+#define BDB_MAX_CANDIDATES 80
+#define BDB_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载：按优先级构造候选路径（含版本化库名）
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int bdb_do_load(const char *library_path) {
     if (db_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[BDB_MAX_CANDIDATES][BDB_PATH_BUF_LEN];
+    const char *candidates[BDB_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < BDB_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("DB_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < BDB_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -123,22 +123,22 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 4) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < BDB_MAX_CANDIDATES - 4) {
+                char *sep = strchr(p, BDB_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
 #ifdef _WIN32
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb62.dll", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb53.dll", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb48.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb62.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb53.dll", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb48.dll", p); { candidates[n] = bufs[n]; n++; }
 #elif defined(__APPLE__)
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.dylib", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.dylib", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-6.2.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-5.3.dylib", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-4.8.dylib", p); { candidates[n] = bufs[n]; n++; }
 #else
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-6.2.so", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-5.3.so", p); { candidates[n] = bufs[n]; n++; }
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/libdb-4.8.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-6.2.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-5.3.so", p); { candidates[n] = bufs[n]; n++; }
+                    snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/libdb-4.8.so", p); { candidates[n] = bufs[n]; n++; }
 #endif
                 }
                 p = sep ? sep + 1 : NULL;
@@ -166,19 +166,19 @@ static int do_load(const char *library_path) {
 #ifndef _WIN32
     const char *home = getenv("HOME");
     if (home && *home) {
-        if (n < MAX_CANDIDATES - 3) {
+        if (n < BDB_MAX_CANDIDATES - 3) {
 #ifdef __APPLE__
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.dylib", home); { candidates[n] = bufs[n]; n++; }
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.dylib", home); { candidates[n] = bufs[n]; n++; }
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.dylib", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.dylib", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.dylib", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.dylib", home); { candidates[n] = bufs[n]; n++; }
 #else
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.so", home); { candidates[n] = bufs[n]; n++; }
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.so", home); { candidates[n] = bufs[n]; n++; }
-            snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.so", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-6.2.so", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-5.3.so", home); { candidates[n] = bufs[n]; n++; }
+            snprintf(bufs[n], BDB_PATH_BUF_LEN, "%s/.nix-profile/lib/libdb-4.8.so", home); { candidates[n] = bufs[n]; n++; }
 #endif
         }
     }
-    if (n < MAX_CANDIDATES - 3) {
+    if (n < BDB_MAX_CANDIDATES - 3) {
 #ifdef __APPLE__
         candidates[n++] = "/nix/var/nix/profiles/default/lib/libdb-6.2.dylib";
         candidates[n++] = "/nix/var/nix/profiles/default/lib/libdb-5.3.dylib";
@@ -215,20 +215,20 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        db_handle = load_lib(candidates[i]);
+        db_handle = bdb_load_lib(candidates[i]);
         if (db_handle) break;
     }
     if (!db_handle) {
-        fprintf(stderr, "bdb_dyn: cannot load libdb (%s)\n", lib_error());
+        fprintf(stderr, "bdb_dyn: cannot load libdb (%s)\n", bdb_lib_error());
         return -1;
     }
 
     /* 验证基础符号并识别版本 */
     void (*fn_version)(int*, int*, int*) = NULL;
-    *(void **)(&fn_version) = get_sym(db_handle, "db_version");
+    *(void **)(&fn_version) = bdb_get_sym(db_handle, "db_version");
     if (!fn_version) {
         fprintf(stderr, "bdb_dyn: loaded library does not export db_version\n");
-        free_lib(db_handle);
+        bdb_free_lib(db_handle);
         db_handle = NULL;
         return -1;
     }
@@ -243,29 +243,29 @@ static int do_load(const char *library_path) {
  * 一次性初始化
  * ============================================================ */
 int bdb_libok(void) {
-    if (init_state == 0) {
-        init_state = (do_load(NULL) == 0) ? 1 : -1;
+    if (bdb_init_state == 0) {
+        bdb_init_state = (bdb_do_load(NULL) == 0) ? 1 : -1;
     }
-    return (init_state == 1 && db_handle != NULL) ? 1 : 0;
+    return (bdb_init_state == 1 && db_handle != NULL) ? 1 : 0;
 }
 
 int db_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) == 0) {
-        init_state = 1;
+    if (bdb_init_state == 1) return 0;
+    if (bdb_init_state == -1) return -1;
+    if (bdb_do_load(library_path) == 0) {
+        bdb_init_state = 1;
         return 0;
     }
-    init_state = -1;
+    bdb_init_state = -1;
     return -1;
 }
 
 void db_dyn_cleanup(void) {
     if (db_handle) {
-        free_lib(db_handle);
+        bdb_free_lib(db_handle);
         db_handle = NULL;
     }
-    init_state = 0;
+    bdb_init_state = 0;
     loaded_major_version = 0;
 }
 
@@ -276,10 +276,10 @@ int db_dyn_loaded_version(void) {
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define BDB_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!bdb_libok()) return fallback;                      \
-        *(void **)(&(var)) = get_sym(db_handle, name);         \
+        *(void **)(&(var)) = bdb_get_sym(db_handle, name);         \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -294,7 +294,7 @@ int db_dyn_loaded_version(void) {
  * ============================================================ */
 int db_create(DB **dbp, DB_ENV *dbenv, u_int32_t flags) {
     static int (*fn)(DB**, DB_ENV*, u_int32_t) = NULL;
-    RESOLVE(fn, "db_create", -1);
+    BDB_RESOLVE(fn, "db_create", -1);
     return fn(dbp, dbenv, flags);
 }
 
@@ -302,7 +302,7 @@ char *db_strerror(int error) {
     static char *(*fn)(int) = NULL;
     if (!fn) {
         if (!bdb_libok()) return "db not initialized";
-        *(void **)(&fn) = get_sym(db_handle, "db_strerror");
+        *(void **)(&fn) = bdb_get_sym(db_handle, "db_strerror");
         if (!fn) return "db_strerror not resolved";
     }
     return fn(error);
@@ -317,7 +317,7 @@ char *db_version(int *majorp, int *minorp, int *patchp) {
             if (patchp) *patchp = 0;
             return NULL;
         }
-        *(void **)(&fn) = get_sym(db_handle, "db_version");
+        *(void **)(&fn) = bdb_get_sym(db_handle, "db_version");
         if (!fn) {
             if (majorp) *majorp = 0;
             if (minorp) *minorp = 0;

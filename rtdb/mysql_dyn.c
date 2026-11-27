@@ -44,65 +44,65 @@ typedef char **MYSQL_ROW;
  * ============================================================ */
 #ifdef _WIN32
   #include <windows.h>
-  typedef HMODULE lib_handle_t;
-  static lib_handle_t load_lib(const char *path) { return LoadLibraryA(path); }
-  static void *get_sym(lib_handle_t h, const char *name) {
+  typedef HMODULE mysql_lib_handle_t;
+  static mysql_lib_handle_t mysql_load_lib(const char *path) { return LoadLibraryA(path); }
+  static void *mysql_get_sym(mysql_lib_handle_t h, const char *name) {
       return (void*)GetProcAddress(h, name);
   }
-  static void free_lib(lib_handle_t h) { if (h) FreeLibrary(h); }
-  static const char *lib_error(void) { return "LoadLibrary failed"; }
-  #define DEFAULT_LIB_NAME "libmysql.dll"
-  #define PATH_SEP ';'
+  static void mysql_free_lib(mysql_lib_handle_t h) { if (h) FreeLibrary(h); }
+  static const char *mysql_lib_error(void) { return "LoadLibrary failed"; }
+  #define MYSQL_DEFAULT_LIB_NAME "libmysql.dll"
+  #define MYSQL_PATH_SEP ';'
 #else
   #include <dlfcn.h>
-  typedef void *lib_handle_t;
-  static lib_handle_t load_lib(const char *path) {
+  typedef void *mysql_lib_handle_t;
+  static mysql_lib_handle_t mysql_load_lib(const char *path) {
       int flags = RTLD_LAZY | RTLD_LOCAL;
   #ifdef RTLD_DEEPBIND
       flags |= RTLD_DEEPBIND;
   #endif
       return dlopen(path, flags);
   }
-  static void *get_sym(lib_handle_t h, const char *name) { return dlsym(h, name); }
-  static void free_lib(lib_handle_t h) { if (h) dlclose(h); }
-  static const char *lib_error(void) { return dlerror(); }
+  static void *mysql_get_sym(mysql_lib_handle_t h, const char *name) { return dlsym(h, name); }
+  static void mysql_free_lib(mysql_lib_handle_t h) { if (h) dlclose(h); }
+  static const char *mysql_lib_error(void) { return dlerror(); }
   #ifdef __APPLE__
-    #define DEFAULT_LIB_NAME "libmysqlclient.dylib"
+    #define MYSQL_DEFAULT_LIB_NAME "libmysqlclient.dylib"
   #else
-    #define DEFAULT_LIB_NAME "libmysqlclient.so"
+    #define MYSQL_DEFAULT_LIB_NAME "libmysqlclient.so"
   #endif
-  #define PATH_SEP ':'
+  #define MYSQL_PATH_SEP ':'
 #endif
 
 /* ============================================================
  * 全局状态
  * ============================================================ */
-static lib_handle_t mysql_handle = NULL;
-static int init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
+static mysql_lib_handle_t mysql_handle = NULL;
+static int mysql_init_state = 0;   /* 0=未初始化, 1=成功, -1=失败 */
 
-#define MAX_CANDIDATES 64
-#define PATH_BUF_LEN   1024
+#define MYSQL_MAX_CANDIDATES 64
+#define MYSQL_PATH_BUF_LEN   1024
 
 /* ============================================================
  * 库加载：按优先级构造候选路径
  * ============================================================ */
-static int do_load(const char *library_path) {
+static int mysql_do_load(const char *library_path) {
     if (mysql_handle) return 0;
 
-    static char bufs[MAX_CANDIDATES][PATH_BUF_LEN];
-    const char *candidates[MAX_CANDIDATES];
+    static char bufs[MYSQL_MAX_CANDIDATES][MYSQL_PATH_BUF_LEN];
+    const char *candidates[MYSQL_MAX_CANDIDATES];
     int n = 0;
 
     /* 1. 显式传入的路径 */
-    if (library_path && *library_path && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", library_path);
+    if (library_path && *library_path && n < MYSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MYSQL_PATH_BUF_LEN, "%s", library_path);
         { candidates[n] = bufs[n]; n++; }
     }
 
     /* 2. 项目专属环境变量 */
     const char *explicit_lib = getenv("MYSQL_DYN_LIB");
-    if (explicit_lib && *explicit_lib && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s", explicit_lib);
+    if (explicit_lib && *explicit_lib && n < MYSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MYSQL_PATH_BUF_LEN, "%s", explicit_lib);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -120,11 +120,11 @@ static int do_load(const char *library_path) {
         char *copy = strdup(env_path);
         if (copy) {
             char *p = copy;
-            while (p && *p && n < MAX_CANDIDATES - 2) {
-                char *sep = strchr(p, PATH_SEP);
+            while (p && *p && n < MYSQL_MAX_CANDIDATES - 2) {
+                char *sep = strchr(p, MYSQL_PATH_SEP);
                 if (sep) *sep = '\0';
                 if (*p) {
-                    snprintf(bufs[n], PATH_BUF_LEN, "%s/%s", p, DEFAULT_LIB_NAME);
+                    snprintf(bufs[n], MYSQL_PATH_BUF_LEN, "%s/%s", p, MYSQL_DEFAULT_LIB_NAME);
                     { candidates[n] = bufs[n]; n++; }
                 }
                 p = sep ? sep + 1 : NULL;
@@ -134,18 +134,18 @@ static int do_load(const char *library_path) {
     }
 
     /* 4. 直接给库名 */
-    candidates[n++] = DEFAULT_LIB_NAME;
+    candidates[n++] = MYSQL_DEFAULT_LIB_NAME;
 
     /* 5. Nix 路径 */
     const char *home = getenv("HOME");
-    if (home && *home && n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
-                 home, DEFAULT_LIB_NAME);
+    if (home && *home && n < MYSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MYSQL_PATH_BUF_LEN, "%s/.nix-profile/lib/%s",
+                 home, MYSQL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
-    if (n < MAX_CANDIDATES - 1) {
-        snprintf(bufs[n], PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
-                 DEFAULT_LIB_NAME);
+    if (n < MYSQL_MAX_CANDIDATES - 1) {
+        snprintf(bufs[n], MYSQL_PATH_BUF_LEN, "/nix/var/nix/profiles/default/lib/%s",
+                 MYSQL_DEFAULT_LIB_NAME);
         { candidates[n] = bufs[n]; n++; }
     }
 
@@ -166,18 +166,18 @@ static int do_load(const char *library_path) {
 
     int i;
     for (i = 0; i < n; i++) {
-        mysql_handle = load_lib(candidates[i]);
+        mysql_handle = mysql_load_lib(candidates[i]);
         if (mysql_handle) break;
     }
     if (!mysql_handle) {
-        fprintf(stderr, "mysql_dyn: cannot load libmysqlclient (%s)\n", lib_error());
+        fprintf(stderr, "mysql_dyn: cannot load libmysqlclient (%s)\n", mysql_lib_error());
         return -1;
     }
 
     /* 验证基础符号 */
-    if (!get_sym(mysql_handle, "mysql_get_client_info")) {
+    if (!mysql_get_sym(mysql_handle, "mysql_get_client_info")) {
         fprintf(stderr, "mysql_dyn: loaded library does not export mysql_get_client_info\n");
-        free_lib(mysql_handle);
+        mysql_free_lib(mysql_handle);
         mysql_handle = NULL;
         return -1;
     }
@@ -189,70 +189,70 @@ static int do_load(const char *library_path) {
  * 一次性初始化：加载库 + 调用 mysql_library_init
  * ============================================================ */
 int mysql_libok(void) {
-    if (init_state == 0) {
-        if (do_load(NULL) != 0) {
-            init_state = -1;
+    if (mysql_init_state == 0) {
+        if (mysql_do_load(NULL) != 0) {
+            mysql_init_state = -1;
             return 0;
         }
         /* MySQL C API 要求先初始化库 */
         int (*fn_lib_init)(void) = NULL;
-        *(void **)(&fn_lib_init) = get_sym(mysql_handle, "mysql_library_init");
+        *(void **)(&fn_lib_init) = mysql_get_sym(mysql_handle, "mysql_library_init");
         if (!fn_lib_init) {
             fprintf(stderr, "mysql_dyn: mysql_library_init not found\n");
-            free_lib(mysql_handle);
+            mysql_free_lib(mysql_handle);
             mysql_handle = NULL;
-            init_state = -1;
+            mysql_init_state = -1;
             return 0;
         }
         if (fn_lib_init() != 0) {
             fprintf(stderr, "mysql_dyn: mysql_library_init failed\n");
-            free_lib(mysql_handle);
+            mysql_free_lib(mysql_handle);
             mysql_handle = NULL;
-            init_state = -1;
+            mysql_init_state = -1;
             return 0;
         }
-        init_state = 1;
+        mysql_init_state = 1;
     }
-    return (init_state == 1 && mysql_handle != NULL) ? 1 : 0;
+    return (mysql_init_state == 1 && mysql_handle != NULL) ? 1 : 0;
 }
 
 int mysql_dyn_init(const char *library_path) {
-    if (init_state == 1) return 0;
-    if (init_state == -1) return -1;
-    if (do_load(library_path) != 0) {
-        init_state = -1;
+    if (mysql_init_state == 1) return 0;
+    if (mysql_init_state == -1) return -1;
+    if (mysql_do_load(library_path) != 0) {
+        mysql_init_state = -1;
         return -1;
     }
     int (*fn_lib_init)(void) = NULL;
-    *(void **)(&fn_lib_init) = get_sym(mysql_handle, "mysql_library_init");
+    *(void **)(&fn_lib_init) = mysql_get_sym(mysql_handle, "mysql_library_init");
     if (!fn_lib_init || fn_lib_init() != 0) {
-        free_lib(mysql_handle);
+        mysql_free_lib(mysql_handle);
         mysql_handle = NULL;
-        init_state = -1;
+        mysql_init_state = -1;
         return -1;
     }
-    init_state = 1;
+    mysql_init_state = 1;
     return 0;
 }
 
 void mysql_dyn_cleanup(void) {
     if (mysql_handle) {
         int (*fn_lib_end)(void) = NULL;
-        *(void **)(&fn_lib_end) = get_sym(mysql_handle, "mysql_library_end");
+        *(void **)(&fn_lib_end) = mysql_get_sym(mysql_handle, "mysql_library_end");
         if (fn_lib_end) fn_lib_end();
-        free_lib(mysql_handle);
+        mysql_free_lib(mysql_handle);
         mysql_handle = NULL;
     }
-    init_state = 0;
+    mysql_init_state = 0;
 }
 
 /* ============================================================
  * 按需解析宏
  * ============================================================ */
-#define RESOLVE(var, name, fallback) do {                      \
+#define MYSQL_RESOLVE(var, name, fallback) do {                      \
     if (!(var)) {                                              \
         if (!mysql_libok()) return fallback;                   \
-        *(void **)(&(var)) = get_sym(mysql_handle, name);      \
+        *(void **)(&(var)) = mysql_get_sym(mysql_handle, name);      \
         if (!(var)) {                                          \
             fprintf(stderr, "dlsym failed: %s\n", name);       \
             return fallback;                                   \
@@ -267,7 +267,7 @@ MYSQL *mysql_init(MYSQL *mysql) {
     static MYSQL *(*fn)(MYSQL*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_init");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_init");
         if (!fn) return NULL;
     }
     return fn(mysql);
@@ -281,7 +281,7 @@ MYSQL *mysql_real_connect(MYSQL *mysql, const char *host, const char *user,
                         const char*, unsigned int, const char*, unsigned long) = NULL;
     if (!fn) {
         if (!mysql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_real_connect");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_real_connect");
         if (!fn) return NULL;
     }
     return fn(mysql, host, user, passwd, db, port, unix_socket, clientflag);
@@ -291,7 +291,7 @@ void mysql_close(MYSQL *mysql) {
     static void (*fn)(MYSQL*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_close");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_close");
         if (!fn) return;
     }
     fn(mysql);
@@ -299,7 +299,7 @@ void mysql_close(MYSQL *mysql) {
 
 int mysql_query(MYSQL *mysql, const char *query) {
     static int (*fn)(MYSQL*, const char*) = NULL;
-    RESOLVE(fn, "mysql_query", -1);
+    MYSQL_RESOLVE(fn, "mysql_query", -1);
     return fn(mysql, query);
 }
 
@@ -307,7 +307,7 @@ MYSQL_RES *mysql_store_result(MYSQL *mysql) {
     static MYSQL_RES *(*fn)(MYSQL*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_store_result");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_store_result");
         if (!fn) return NULL;
     }
     return fn(mysql);
@@ -317,7 +317,7 @@ MYSQL_ROW mysql_fetch_row(MYSQL_RES *result) {
     static MYSQL_ROW (*fn)(MYSQL_RES*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return NULL;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_fetch_row");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_fetch_row");
         if (!fn) return NULL;
     }
     return fn(result);
@@ -327,7 +327,7 @@ void mysql_free_result(MYSQL_RES *result) {
     static void (*fn)(MYSQL_RES*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return;
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_free_result");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_free_result");
         if (!fn) return;
     }
     fn(result);
@@ -335,19 +335,19 @@ void mysql_free_result(MYSQL_RES *result) {
 
 unsigned int mysql_num_fields(MYSQL_RES *result) {
     static unsigned int (*fn)(MYSQL_RES*) = NULL;
-    RESOLVE(fn, "mysql_num_fields", 0);
+    MYSQL_RESOLVE(fn, "mysql_num_fields", 0);
     return fn(result);
 }
 
 unsigned long long mysql_num_rows(MYSQL_RES *result) {
     static unsigned long long (*fn)(MYSQL_RES*) = NULL;
-    RESOLVE(fn, "mysql_num_rows", 0);
+    MYSQL_RESOLVE(fn, "mysql_num_rows", 0);
     return fn(result);
 }
 
 unsigned int mysql_errno(MYSQL *mysql) {
     static unsigned int (*fn)(MYSQL*) = NULL;
-    RESOLVE(fn, "mysql_errno", 0);
+    MYSQL_RESOLVE(fn, "mysql_errno", 0);
     return fn(mysql);
 }
 
@@ -355,7 +355,7 @@ const char *mysql_error(MYSQL *mysql) {
     static const char *(*fn)(MYSQL*) = NULL;
     if (!fn) {
         if (!mysql_libok()) return "mysql not initialized";
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_error");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_error");
         if (!fn) return "mysql_error not resolved";
     }
     return fn(mysql);
@@ -365,7 +365,7 @@ const char *mysql_get_client_info(void) {
     static const char *(*fn)(void) = NULL;
     if (!fn) {
         if (!mysql_libok()) return "unknown";
-        *(void **)(&fn) = get_sym(mysql_handle, "mysql_get_client_info");
+        *(void **)(&fn) = mysql_get_sym(mysql_handle, "mysql_get_client_info");
         if (!fn) return "unknown";
     }
     return fn();
@@ -373,6 +373,6 @@ const char *mysql_get_client_info(void) {
 
 unsigned long mysql_get_client_version(void) {
     static unsigned long (*fn)(void) = NULL;
-    RESOLVE(fn, "mysql_get_client_version", 0);
+    MYSQL_RESOLVE(fn, "mysql_get_client_version", 0);
     return fn();
 }
