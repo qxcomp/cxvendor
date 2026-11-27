@@ -37,3 +37,14 @@ Build note
   candidates are reported and skipped. Only when no system Node qualifies does
   the port download Node 22.23.5 on demand into buildtrees; no vcpkg Node
   package is installed unconditionally.
+
+Conditional nodejs22 dependency
+  The manifest declares a 'nodejs22' feature whose dependency is the standalone
+  host tool port nodejs22. Install with the provided install.sh / install.ps1
+  script: it checks the system Node first and enables the feature only when no
+  usable Node is present, so vcpkg installs nodejs22 exactly in that case.
+  Example: ./install.sh --vcpkg-root /path/to/vcpkg --triplet x64-linux
+  The dependency is visible with:
+    vcpkg depend-info 'joplin-terminal[nodejs22]' --overlay-ports=... --format=tree
+  Manually installing 'joplin-terminal[nodejs22]' always uses the nodejs22 tool;
+  installing plain 'joplin-terminal' never installs it.

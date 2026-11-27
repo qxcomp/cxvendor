@@ -1,0 +1,31 @@
+#!/bin/sh
+# LibreTV needs Node.js 18+ at runtime. Prefer a system Node; fall back to the
+# nodejs22 host tool installed by the optional 'nodejs22' feature.
+_node_usable() {
+  _v=$("$1" -p process.versions.node 2>/dev/null) || return 1
+  case "$_v" in
+    [0-9]*) _maj=${_v%%.*}; [ "$_maj" -ge 18 ] ;;
+    *) return 1 ;;
+  esac
+}
+
+_node=""
+if command -v node >/dev/null 2>&1 && _node_usable node; then
+  _node=node
+fi
+if [ -z "$_node" ]; then
+  for _cand in @LIBRETV_NODEJS22_UNIX_PATHS@; do
+    if [ -x "$_cand" ] && _node_usable "$_cand"; then
+      _node="$_cand"
+      break
+    fi
+  done
+fi
+if [ -z "$_node" ]; then
+  echo "libretv: no usable Node.js 18+ found; install Node.js 18+ or install libretv[nodejs22]." >&2
+  exit 127
+fi
+
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$_here" || exit 1
+exec "$_node" "$_here/server.js" "$@"

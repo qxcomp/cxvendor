@@ -1,0 +1,22 @@
+@echo off
+setlocal
+rem LibreTV needs Node.js 18+ at runtime. Prefer a system Node; fall back to
+rem the nodejs22 host tool installed by the optional 'nodejs22' feature.
+set "_node="
+where node >nul 2>nul
+if not errorlevel 1 (
+  node -p process.versions.node >nul 2>nul
+  if not errorlevel 1 set "_node=node"
+)
+if not defined _node (
+  for %%P in (@LIBRETV_NODEJS22_WIN_PATHS@) do (
+    if exist %%P set "_node=%%~P"
+  )
+)
+if not defined _node (
+  echo libretv: no usable Node.js 18+ found; install Node.js 18+ or install libretv[nodejs22]. 1>&2
+  exit /b 127
+)
+cd /d "%~dp0"
+"%_node%" "%~dp0server.js" %*
+exit /b %ERRORLEVEL%

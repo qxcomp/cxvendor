@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "libretv",
+  "version-semver": "2.24.0",
+  "description": "LibreTV - free online video search and playback platform (official standalone build)",
+  "homepage": "https://libretv.is-an.org/",
+  "license": "AGPL-3.0-or-later",
+  "supports": "(linux | windows | osx) & (x64 | arm64)",
+  "features": {
+    "nodejs22": {
+      "description": "Install the standalone nodejs22 host tool when no usable system Node.js is available",
+      "dependencies": [
+        { "name": "nodejs22", "host": true }
+      ]
+    }
+  }
+}

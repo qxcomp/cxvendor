@@ -1,0 +1,31 @@
+libretv provides LibreTV 2.24.0 from the official release standalone bundle,
+installed under tools/libretv/.
+
+Launcher
+  Linux/macOS: tools/libretv/libretv
+  Windows:     tools/libretv\libretv.cmd
+
+Run
+  PASSWORD=your-password libretv
+  PASSWORD=your-password PORT=8080 libretv   # PORT defaults to 3000
+
+PASSWORD is required; the site prompts for administrator setup if it is not
+set. Other optional environment variables (PROXY_SECRET, DEFAULT_SOURCES,
+DEFAULT_LIVE_SOURCES, etc.) are passed through unchanged.
+
+Runtime requirement
+  Node.js 18+ is required. The launcher prefers Node from PATH and falls back
+  to the nodejs22 host tool when the 'nodejs22' feature is enabled. If neither
+  is usable it prints an error and exits with code 127.
+
+Conditional nodejs22 dependency
+  The manifest declares a 'nodejs22' feature whose dependency is the standalone
+  host tool port nodejs22. Use the provided install.sh / install.ps1 script: it
+  checks the system Node first and enables the feature only when no usable
+  Node is present, so vcpkg installs nodejs22 exactly in that case.
+  Example: ./install.sh --vcpkg-root /path/to/vcpkg --triplet x64-linux
+  The dependency is visible with:
+    vcpkg depend-info 'libretv[nodejs22]' --overlay-ports=... --format=tree
+
+The release bundle is architecture independent and ships its runtime
+node_modules, so no npm install or native build is performed at packaging time.
