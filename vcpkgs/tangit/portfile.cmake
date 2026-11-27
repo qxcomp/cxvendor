@@ -55,6 +55,7 @@ if(VCPKG_TARGET_IS_OSX)
         GOTOOLCHAIN=local
         GOEXPERIMENT=jsonv2
         GOSUMDB=off
+        GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
         GOFLAGS=-mod=mod
         GOCACHE=${_TANGIT_GO_BUILD_DIR}/go-cache
         GOMODCACHE=${_TANGIT_GO_MODCACHE}
@@ -79,13 +80,60 @@ if(VCPKG_TARGET_IS_OSX)
         endif()
     endmacro()
 
+    # Validate a downloaded .mod before Go reads it. A proxy can answer with
+    # HTTP 200 and an empty/HTML body; Go then reports "missing module line".
+    # The optional expected module path also catches a mismatched download.
+    macro(_tangit_mod_file_valid _file _expected_module _out_var)
+        set(${_out_var} FALSE)
+        if(EXISTS "${_file}")
+            file(STRINGS "${_file}" _tangit_mod_head LIMIT_COUNT 20)
+            foreach(_l IN LISTS _tangit_mod_head)
+                if(_l MATCHES "^module[ \t]+\\(")
+                    # Block form: module ( <path> ). Accept without comparing.
+                    set(${_out_var} TRUE)
+                    break()
+                elseif(_l MATCHES "^module[ \t]+([^ \t]+)")
+                    string(STRIP "${CMAKE_MATCH_1}" _tangit_mod_declared)
+                    if("${_expected_module}" STREQUAL "" OR "${_tangit_mod_declared}" STREQUAL "${_expected_module}")
+                        set(${_out_var} TRUE)
+                    endif()
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endmacro()
+
     # Tangit's own go.mod would otherwise block the local toolchain immediately.
     _tangit_patch_go_directive("${SOURCE_PATH}/go.mod")
 
-    # Fetch every go.mod in go.sum into the isolated cache. Go itself refuses to
-    # download modules whose go directive is newer than the local toolchain.
+    # Keep a pristine go.sum: vcpkg reuses the source tree, and the stripping
+    # below removes the /go.mod lines needed to rebuild the cache on retry.
+    set(_TANGIT_GO_SUM_ORIG "${CURRENT_BUILDTREES_DIR}/go.sum.orig")
+    if(NOT EXISTS "${_TANGIT_GO_SUM_ORIG}")
+        file(STRINGS "${SOURCE_PATH}/go.sum" _tangit_sum_probe REGEX "/go\\.mod h1:")
+        list(LENGTH _tangit_sum_probe _tangit_sum_probe_n)
+        if(_tangit_sum_probe_n EQUAL 0)
+            message(FATAL_ERROR
+                "tangit: ${SOURCE_PATH}/go.sum has no /go.mod checksums; "
+                "remove buildtrees/tangit and retry with a clean source tree")
+        endif()
+        file(COPY "${SOURCE_PATH}/go.sum" DESTINATION "${CURRENT_BUILDTREES_DIR}")
+        file(RENAME "${CURRENT_BUILDTREES_DIR}/go.sum" "${_TANGIT_GO_SUM_ORIG}")
+    else()
+        file(STRINGS "${_TANGIT_GO_SUM_ORIG}" _tangit_sum_probe REGEX "/go\\.mod h1:")
+        list(LENGTH _tangit_sum_probe _tangit_sum_probe_n)
+        if(_tangit_sum_probe_n EQUAL 0)
+            message(FATAL_ERROR
+                "tangit: ${_TANGIT_GO_SUM_ORIG} has no /go.mod checksums; "
+                "remove buildtrees/tangit and retry")
+        endif()
+    endif()
+
+    # Fetch every go.mod in the pristine go.sum into the isolated cache. Go
+    # itself refuses to download modules whose go directive is newer than the
+    # local toolchain.
     set(_TANGIT_UPPER "A;B;C;D;E;F;G;H;I;J;K;L;M;N;O;P;Q;R;S;T;U;V;W;X;Y;Z")
-    file(STRINGS "${SOURCE_PATH}/go.sum" _TANGIT_SUM_LINES)
+    file(STRINGS "${_TANGIT_GO_SUM_ORIG}" _TANGIT_SUM_LINES)
     foreach(_l IN LISTS _TANGIT_SUM_LINES)
         if(_l MATCHES "^([^ ]+) ([^ ]+)/go\\.mod h1:")
             set(_mod "${CMAKE_MATCH_1}")
@@ -96,20 +144,25 @@ if(VCPKG_TARGET_IS_OSX)
                 string(REPLACE "${_u}" "!${_lower}" _esc "${_esc}")
             endforeach()
             set(_dest "${_TANGIT_GO_MODCACHE}/cache/download/${_esc}/@v/${_ver}.mod")
-            if(NOT EXISTS "${_dest}")
+            _tangit_mod_file_valid("${_dest}" "${_mod}" _mod_valid)
+            if(NOT _mod_valid)
                 get_filename_component(_dest_dir "${_dest}" DIRECTORY)
                 file(MAKE_DIRECTORY "${_dest_dir}")
-                foreach(_proxy IN ITEMS https://proxy.golang.org https://goproxy.cn)
+                foreach(_proxy IN ITEMS https://goproxy.cn https://proxy.golang.org)
                     file(DOWNLOAD "${_proxy}/${_esc}/@v/${_ver}.mod" "${_dest}"
                         TLS_VERIFY ON STATUS _dl_status)
                     list(GET _dl_status 0 _dl_code)
-                    if(_dl_code EQUAL 0)
+                    _tangit_mod_file_valid("${_dest}" "${_mod}" _mod_valid)
+                    if(_dl_code EQUAL 0 AND _mod_valid)
                         break()
                     endif()
                     file(REMOVE "${_dest}")
+                    set(_mod_valid FALSE)
                 endforeach()
-                if(NOT EXISTS "${_dest}")
-                    message(FATAL_ERROR "Failed to download ${_mod}@${_ver}.mod")
+                if(NOT _mod_valid)
+                    message(FATAL_ERROR
+                        "Failed to download a valid ${_mod}@${_ver}.mod "
+                        "(last status: ${_dl_status})")
                 endif()
             endif()
         endif()
@@ -122,7 +175,7 @@ if(VCPKG_TARGET_IS_OSX)
 
     # Strip only the go.mod checksums; zip checksums stay untouched. They are
     # regenerated from the patched files by `go list -m all` below.
-    file(STRINGS "${SOURCE_PATH}/go.sum" _TANGIT_SUM_LINES)
+    file(STRINGS "${_TANGIT_GO_SUM_ORIG}" _TANGIT_SUM_LINES)
     set(_TANGIT_SUM_NEW "")
     foreach(_l IN LISTS _TANGIT_SUM_LINES)
         if(NOT _l MATCHES "/go\\.mod h1:")
