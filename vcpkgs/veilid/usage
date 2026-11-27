@@ -1,0 +1,10 @@
+veilid is a tool-only package. It installs these executables under tools/veilid:
+
+    veilid-server
+    veilid-cli
+
+Vcpkg adds this directory to PATH for consumers. There is no CMake target.
+
+Only Linux glibc x64 and arm64 are packaged. The systemd unit and the /etc
+configuration files from the official Debian packages are intentionally not
+installed.

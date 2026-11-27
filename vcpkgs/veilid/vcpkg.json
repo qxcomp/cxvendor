@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "veilid",
+  "version-semver": "0.5.8",
+  "description": "Veilid peer-to-peer network headless server and CLI (official Linux packages)",
+  "homepage": "https://veilid.com",
+  "license": "MPL-2.0",
+  "supports": "linux & (x64 | arm64)"
+}

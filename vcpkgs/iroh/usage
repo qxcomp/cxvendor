@@ -1,0 +1,10 @@
+iroh is a tool-only package. It installs these executables under tools/iroh:
+
+    iroh-dns-server
+    iroh-relay
+
+Vcpkg adds this directory to PATH for consumers. There is no CMake target and
+no standalone `iroh` CLI binary in the v1.5.0 release.
+
+On Linux, triplets whose name contains "musl" install the musl release assets;
+all other Linux triplets install the gnu release assets.

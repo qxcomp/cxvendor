@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "iroh",
+  "version-semver": "1.5.0",
+  "description": "P2P networking tools from iroh: DNS server and relay (prebuilt release)",
+  "homepage": "https://github.com/n0-computer/iroh",
+  "license": "MIT OR Apache-2.0",
+  "supports": "((linux | osx) & (x64 | arm64)) | (windows & x64 & !mingw & !uwp)"
+}
