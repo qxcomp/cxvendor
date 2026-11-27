@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "librats",
+  "version": "3.0.6",
+  "description": "C++17 peer-to-peer networking library: encrypted P2P (Noise XX), DHT/mDNS discovery, NAT traversal, GossipSub pub/sub, file transfer and optional BitTorrent.",
+  "homepage": "https://github.com/librats/librats",
+  "license": "MIT AND BSD-3-Clause AND BSD-2-Clause AND BSD-1-Clause",
+  "supports": "(linux | windows | osx) & (x64 | arm64) & !mingw & !staticcrt & !uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+librats provides the CMake target `rats::rats`:
+
+    find_package(rats CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE rats::rats)
+
+Packaging notes:
+- Only the x64-osx and x64-osx-dynamic triplets are built from source; upstream
+  does not publish a macOS x64 archive.
+- All other supported triplets install the upstream 3.0.6 release archive,
+  which contains a single static library (librats.a / rats.lib).
+- The release archives are built with the C bindings enabled, the BitTorrent
+  search features disabled and the distributed storage module disabled.
+  The x64-osx source builds use the same feature set.
+- The upstream Windows archive is an MSVC build; MinGW and static-CRT triplets
+  are not supported.
