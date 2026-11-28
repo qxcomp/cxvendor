@@ -132,6 +132,50 @@ elseif(VCPKG_TARGET_IS_OSX)
         REF v${_UPDAINIUM_VERSION}
     )
 
+    # Big Sur WKWebView is Safari 14. Vite 8 defaults to Safari 16.4 and
+    # marked@18 uses .at()/Object.hasOwn (Safari 15.4+). Downlevel syntax and
+    # add the missing runtime APIs before any module script runs.
+    vcpkg_replace_string(
+        "${SOURCE_PATH}/src-tauri/tauri.conf.json"
+        "\"beforeBuildCommand\": \"npm run build\""
+        "\"beforeBuildCommand\": \"npm run build -- --target safari14\""
+    )
+    file(WRITE "${SOURCE_PATH}/static/legacy-polyfills.js" [[
+if (!Array.prototype.at) {
+  Object.defineProperty(Array.prototype, "at", {
+    configurable: true, writable: true,
+    value: function (index) {
+      var i = Number(index) | 0, len = this.length;
+      var k = i < 0 ? len + i : i;
+      return k < 0 || k >= len ? undefined : this[k];
+    },
+  });
+}
+if (!String.prototype.at) {
+  Object.defineProperty(String.prototype, "at", {
+    configurable: true, writable: true,
+    value: function (index) {
+      var s = String(this), i = Number(index) | 0, len = s.length;
+      var k = i < 0 ? len + i : i;
+      return k < 0 || k >= len ? undefined : s.charAt(k);
+    },
+  });
+}
+if (!Object.hasOwn) {
+  Object.defineProperty(Object, "hasOwn", {
+    configurable: true, writable: true,
+    value: function (object, key) {
+      return Object.prototype.hasOwnProperty.call(object, key);
+    },
+  });
+}
+]])
+    vcpkg_replace_string(
+        "${SOURCE_PATH}/src/app.html"
+        "    %sveltekit.head%"
+        "    <script src=\"/legacy-polyfills.js\"></script>\n    %sveltekit.head%"
+    )
+
     set(_npm_cache "${CURRENT_BUILDTREES_DIR}/npm-cache")
     set(_cargo_home "${CURRENT_BUILDTREES_DIR}/cargo-home")
     file(MAKE_DIRECTORY "${_npm_cache}" "${_cargo_home}")
