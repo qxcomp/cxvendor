@@ -1,0 +1,8 @@
+updainium installs the GUI application under tools/updainium/.
+
+    Linux:   tools/updainium/Updainium.AppImage   (needs FUSE, or --appimage-extract-and-run)
+    Windows: tools/updainium/Updainium.exe
+    macOS:   open tools/updainium/Updainium.app
+
+The installed app fetches release information from upstream at runtime; it is
+not a C/C++ library and provides no headers or CMake targets.

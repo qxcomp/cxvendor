@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "updainium",
+  "version-string": "1.5.2",
+  "description": "Install and update desktop apps directly from their official releases",
+  "homepage": "https://github.com/livrasand/Updainium",
+  "license": "GPL-3.0-only",
+  "supports": "((linux & x64 & !static) | (osx & (x64 | arm64)) | (windows & x64 & !uwp & !staticcrt))",
+  "dependencies": []
+}
